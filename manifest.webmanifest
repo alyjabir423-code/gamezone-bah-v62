@@ -1,0 +1,10 @@
+{
+  "name": "GameZone Bah V62 — Patron",
+  "short_name": "GZ Patron",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0d0d1a",
+  "theme_color": "#0d0d1a",
+  "description": "GameZone Patron V35 — chargement initial allégé, voix après confirmation, cartes alignées"
+}
