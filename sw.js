@@ -1,5 +1,5 @@
 // Historique prive Patron / partage Gerant — version 27
-const CACHE='gamezone-bah-v62-types-ps1-autres-20261012-patron-02';
+const CACHE='gamezone-v62-type-editor-safe-20261012-patron-v3';
 const ASSETS=['./','./index.html','./manifest.webmanifest'];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting()));

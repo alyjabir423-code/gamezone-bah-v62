@@ -501,10 +501,10 @@ button,.ni,.ctl-btn{touch-action:manipulation}
           <button type="button" onclick="gzAddTarifType()" style="border:1px solid var(--gold);background:rgba(245,158,11,.15);color:var(--gl);border-radius:9px;padding:11px 13px;font-weight:700">＋ Ajouter type</button>
         </div>
         <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:10px">
-          <button id="gz-rename-tarif-type" type="button" onclick="gzRenameTarifType()" style="display:none;padding:10px 12px;border-radius:9px;background:rgba(99,102,241,.16);border:1px solid var(--blue);color:var(--text);font-weight:700">✏️ Renommer ce type</button>
+          <button id="gz-rename-tarif-type" type="button" onclick="gzRenameTarifType()" style="display:none;padding:10px 12px;border-radius:9px;background:rgba(99,102,241,.16);border:1px solid var(--blue);color:var(--text);font-weight:700">✏️ Modifier / Renommer ce type</button>
           <button id="gz-delete-tarif-type" type="button" onclick="gzDeleteTarifType()" style="display:none;padding:10px 12px;border-radius:9px;background:rgba(239,68,68,.1);border:1px solid #ef4444;color:#fca5a5;font-weight:700">🗑 Supprimer ce type</button>
         </div>
-        <div style="font-size:10px;color:var(--muted);margin-top:9px">PS1 et « Autres » sont modifiables. Les types utilisés par un poste ou un tarif ne peuvent pas être supprimés par erreur.</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:9px">PS1 et « Autres » sont modifiables. Les types reliés à un poste restent protégés ; supprimer un type et ses tarifs exige une confirmation.</div>
       </div>
       <div class="card" id="list-tarifs"></div>
       <button class="btn-add" onclick="openModalTarif()">+ Ajouter un tarif</button>
@@ -666,6 +666,38 @@ button,.ni,.ctl-btn{touch-action:manipulation}
     <div class="ma">
       <button class="btn-cancel" onclick="closeModal('mo-tarif')">Annuler</button>
       <button class="btn-ok" onclick="saveTarif()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- V62 — édition visuelle des types PS1, Autres et personnalisés (mobile) -->
+<div class="mo" id="mo-gz-rename-type">
+  <div class="ms">
+    <div class="mh"></div>
+    <div class="mt">✏️ Renommer le type de console</div>
+    <div class="ig">
+      <label>Nouveau nom du type</label>
+      <input type="text" id="gz-rename-type-input" maxlength="32" autocomplete="off" placeholder="Ex. : PS1, Xbox, Nintendo">
+    </div>
+    <div class="info-box" style="font-size:12px">Les postes et leurs ID Tuya restent inchangés. Les tarifs du type sont conservés.</div>
+    <div class="ma">
+      <button type="button" class="btn-cancel" onclick="closeModal('mo-gz-rename-type')">Annuler</button>
+      <button type="button" id="gz-type-rename-confirm" class="btn-ok" onclick="gzSaveRenamedTarifType()">💾 Enregistrer</button>
+    </div>
+  </div>
+</div>
+<div class="mo" id="mo-gz-delete-type">
+  <div class="ms">
+    <div class="mh"></div>
+    <div class="mt">🗑 Supprimer un type de console</div>
+    <div id="gz-type-delete-info" class="info-box" style="font-size:12px;line-height:1.65"></div>
+    <label id="gz-type-delete-ack-wrap" style="display:none;font-size:12px;line-height:1.5;margin-top:13px;color:var(--text)">
+      <input type="checkbox" id="gz-type-delete-ack" onchange="gzDeleteTypeAckChanged()" style="width:auto;vertical-align:middle;margin-right:6px">
+      Je confirme la suppression des tarifs de cette console (historique et recettes conservés).
+    </label>
+    <div class="ma">
+      <button type="button" class="btn-cancel" onclick="closeModal('mo-gz-delete-type')">Annuler</button>
+      <button type="button" class="btn-ok" id="gz-type-delete-confirm" style="background:#dc2626" onclick="gzConfirmDeleteTarifType()">🗑 Supprimer ce type</button>
     </div>
   </div>
 </div>
@@ -1231,7 +1263,7 @@ function renderControl(){
       ? `<button class="ctl-btn ctl-resume" onclick="ownerResume(${i})">▶ REPRENDRE</button><button class="ctl-btn ctl-plus" onclick="ownerOpenPlus(${i})">＋TPS</button><button class="ctl-btn ctl-cancel" onclick="ownerOpenCancel(${i})">ANNULER</button><button class="ctl-btn ctl-off" onclick="ownerPowerOff(${i})">⏻ OFF TV</button>`
       : `<button class="ctl-btn ctl-pause" onclick="ownerPause(${i})">⏸ PAUSE</button><button class="ctl-btn ctl-plus" onclick="ownerOpenPlus(${i})">＋TPS</button><button class="ctl-btn ctl-cancel" onclick="ownerOpenCancel(${i})">ANNULER</button><button class="ctl-btn ctl-off" onclick="ownerPowerOff(${i})">⏻ OFF TV</button>`;
     return `<div class="ctl-card ${cls}">
-      <div class="ctl-head"><div><div class="ctl-num">${esc(ownerSpeechPosteName(p.num))}</div><div class="ctl-type">${esc(p.typeCustom||p.type)}</div></div><span class="badge ${a.actif?'b-on':'b-off'}">${badge}</span></div>
+      <div class="ctl-head"><div><div class="ctl-num">${esc(ownerSpeechPosteName(p.num))}</div><div class="ctl-type">${esc(gzPosteTypeLabel(p))}</div></div><span class="badge ${a.actif?'b-on':'b-off'}">${badge}</span></div>
       <div class="ctl-timer-row"><div class="ctl-timer ${a.paused?'pause':(a.actif?'on':'free')}">${timer}</div>${a.actif?`<div class="ctl-money">${amount.toLocaleString('fr-FR')} F</div>`:''}</div>
       <div class="ctl-progress"><div class="ctl-progress-bar" style="width:${pct}%;background:${progressColor}"></div></div>
       <div class="ctl-client">${a.actif?esc(a.client||'Client'):'Disponible'}</div>
@@ -1482,7 +1514,7 @@ function ownerRenderReport(){
   if(byId('or-date'))byId('or-date').textContent=bd.toLocaleDateString('fr-FR',{day:'numeric',month:'long'});if(byId('or-rec'))byId('or-rec').textContent=money(ss.recettes).toLocaleString('fr-FR')+' FCFA';if(byId('or-active'))byId('or-active').textContent=active.length;if(byId('or-done'))byId('or-done').textContent=Math.max(0,Number(ss.count)||0);if(byId('or-plugs'))byId('or-plugs').textContent=plugs.length;
   [['or-day',rev.day],['or-yesterday',rev.yesterday],['or-week',rev.week],['or-month',rev.month],['or-total',rev.total]].forEach(([id,v])=>{if(byId(id))byId(id).textContent=money(v).toLocaleString('fr-FR')+' FCFA';});
   const pay=byId('or-payments');if(pay){const ent=Object.entries(ss.payStats||{});pay.innerHTML=ent.length?ent.map(([id,v])=>{const p=OWNER_PAYS.find(x=>x.id===id);return `<div class="owner-rrow"><span class="owner-rkey">${p?p.emoji+' '+p.lbl:id}</span><span class="owner-rval purple">${money(v).toLocaleString('fr-FR')} FCFA</span></div>`;}).join(''):'<div class="owner-rrow"><span class="owner-rkey">Aucune donnée</span></div>';}
-  const pp=byId('or-postes');if(pp)pp.innerHTML=postes.length?postes.map(p=>`<div class="owner-rrow" style="display:block"><div style="font-weight:700;margin-bottom:4px">${esc(p.num)} — ${esc(p.typeCustom||p.type)}</div><div style="font-size:10px;color:#7f8498">Jour : ${money(rev.perPoste.day[p.num]).toLocaleString('fr-FR')} F · Semaine : ${money(rev.perPoste.week[p.num]).toLocaleString('fr-FR')} F · Mois : ${money(rev.perPoste.month[p.num]).toLocaleString('fr-FR')} F · Total : ${money(rev.perPoste.total[p.num]).toLocaleString('fr-FR')} F</div></div>`).join(''):'<div class="owner-rrow"><span class="owner-rkey">Aucun poste</span></div>';
+  const pp=byId('or-postes');if(pp)pp.innerHTML=postes.length?postes.map(p=>`<div class="owner-rrow" style="display:block"><div style="font-weight:700;margin-bottom:4px">${esc(p.num)} — ${esc(gzPosteTypeLabel(p))}</div><div style="font-size:10px;color:#7f8498">Jour : ${money(rev.perPoste.day[p.num]).toLocaleString('fr-FR')} F · Semaine : ${money(rev.perPoste.week[p.num]).toLocaleString('fr-FR')} F · Mois : ${money(rev.perPoste.month[p.num]).toLocaleString('fr-FR')} F · Total : ${money(rev.perPoste.total[p.num]).toLocaleString('fr-FR')} F</div></div>`).join(''):'<div class="owner-rrow"><span class="owner-rkey">Aucun poste</span></div>';
   const cancels=(DB.get('annulations')||[]).filter(a=>a&&a.dateKey===businessDateKey(new Date())).sort((a,b)=>(Number(b.ts)||0)-(Number(a.ts)||0));if(byId('or-cancel-count'))byId('or-cancel-count').textContent=cancels.length+' annulation'+(cancels.length>1?'s':'');const cl=byId('or-cancels');if(cl)cl.innerHTML=cancels.length?cancels.map(a=>`<div class="owner-cancel-card"><div class="owner-cancel-head"><span class="owner-cancel-post">↩ ${esc(a.poste||'Poste')}</span><span class="owner-cancel-money">-${money(a.montantRetireJour!=null?a.montantRetireJour:a.montant).toLocaleString('fr-FR')} F</span></div><div class="owner-cancel-meta">${esc(a.client||'—')} · Annulé à ${esc(a.heure||ownerFmtClock(a.ts))} · Temps restant ${fmtRest(a.tempsRestantSec||0)}</div><div class="owner-cancel-reason">Motif : ${esc(a.raison||'Non indiqué')}</div><div class="owner-cancel-meta">Par : ${esc(a.gerant||'—')}</div></div>`).join(''):'<div class="owner-rrow"><span class="owner-rkey">Aucune annulation aujourd\'hui</span></div>';
 }
 async function ownerEnsureDailyRollover(){
@@ -2070,7 +2102,7 @@ function renderHome(){
     return `<div class="hpr">
       <div class="prise-dot ${a.actif&&hasPrise?'pd-on':hasPrise?'pd-off':'pd-none'}"></div>
       <div style="font-family:var(--fd);font-size:16px;font-weight:700;color:var(--gold);min-width:36px">${p.num}</div>
-      <div style="flex:1"><div style="font-size:12px;font-weight:500">${p.typeCustom||p.type}</div>
+      <div style="flex:1"><div style="font-size:12px;font-weight:500">${esc(gzPosteTypeLabel(p))}</div>
       <div style="font-size:10px;color:var(--muted)">${hasPrise?'🔌 Prise liée':'⚠️ Sans prise'} · ${recPoste.toLocaleString('fr-FR')} FCFA aujourd'hui</div></div>
       ${a.actif?`<div style="text-align:right"><div style="font-family:var(--fd);font-size:16px;color:var(--green)">${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')}</div><div style="font-size:10px;color:var(--muted)">${a.client}</div></div>`
       :'<span class="badge b-off">LIBRE</span>'}
@@ -2238,77 +2270,122 @@ function gzAddTarifType(){
   input.value='';activeConsoleTab=name;
   renderTarifs();showToast('✅ Nouveau type créé : '+name);
 }
-async function gzRenameTarifType(){
-  const former=activeConsoleTab,key=gzConsoleTypeKey(former);
-  if(gzProtectedConsoleType(former))return showToast('⚠️ PS3, PS4 et PS5 sont protégés.');
-  const raw=prompt('Nouveau nom pour '+gzConsoleTypeLabel(former)+' :',gzConsoleTypeLabel(former));
-  if(raw===null)return;
-  const name=gzConsoleTypeName(raw);
-  if(name.length<2)return showToast('⚠️ Nom de 2 à 32 caractères requis.');
-  if(gzConsoleTarifTypes().some(x=>gzConsoleTypeKey(x)!==key&&
-      (gzConsoleTypeKey(x)===gzConsoleTypeKey(name)||gzConsoleTypeKey(gzConsoleTypeLabel(x))===gzConsoleTypeKey(name))))
-    return showToast('⚠️ Ce nom existe déjà.');
-  if(!fbRoot)return showToast('⚠️ Connexion Firebase nécessaire.');
-  // Les types d'origine Autres et PS1 gardent leur identifiant Firebase.
-  // Seul leur libellé change : aucune vente ni prise existante ne bouge.
-  if(gzBuiltinConsoleType(former)){
-    const labels={...(DB.get('tarif_type_labels')||{})};
-    if(gzConsoleTypeKey(name)===key)delete labels[key];else labels[key]=name;
-    if(!confirm('Afficher « '+gzConsoleTypeLabel(former)+' » sous le nom « '+name+' » ? Les tarifs et postes sont conservés.'))return;
-    try{
+// Modification depuis un véritable formulaire, y compris sur Android Chrome / WebView.
+function gzRenameTarifType(){
+  const current=activeConsoleTab;
+  if(gzProtectedConsoleType(current))return showToast('⚠️ PS3, PS4 et PS5 sont protégés.');
+  const el=document.getElementById('gz-rename-type-input');
+  el.value=gzConsoleTypeLabel(current);
+  openModal('mo-gz-rename-type');
+  setTimeout(()=>el.focus(),120);
+}
+async function gzSaveRenamedTarifType(){
+  const former=activeConsoleTab, key=gzConsoleTypeKey(former);
+  const name=gzConsoleTypeName(document.getElementById('gz-rename-type-input').value);
+  if(gzProtectedConsoleType(former))return showToast('⚠️ Type protégé.');
+  if(name.length<2)return showToast('⚠️ Écris au moins 2 caractères.');
+  if(gzConsoleTypeKey(name)===gzConsoleTypeKey(gzConsoleTypeLabel(former))){
+    closeModal('mo-gz-rename-type');return;
+  }
+  const collision=gzConsoleTarifTypes().some(x=>gzConsoleTypeKey(x)!==key&&
+    (gzConsoleTypeKey(x)===gzConsoleTypeKey(name)||gzConsoleTypeKey(gzConsoleTypeLabel(x))===gzConsoleTypeKey(name)));
+  if(collision)return showToast('⚠️ Un autre type porte déjà ce nom.');
+  if(!fbRoot)return showToast('⚠️ Connecte-toi à Firebase avant de modifier un type.');
+  const btn=document.getElementById('gz-type-rename-confirm');btn.disabled=true;
+  try{
+    if(gzBuiltinConsoleType(former)){
+      // Autres / PS1 : conserver les codes internes, les ID Tuya et les tarifs.
+      const labels={...(DB.get('tarif_type_labels')||{})};
+      if(gzConsoleTypeKey(name)===key)delete labels[key];else labels[key]=name;
       await fbRoot.child('tarif_type_labels').set(labels);
       DB._cache.tarif_type_labels=labels;
-      renderTarifs();renderPostes();renderHome();showToast('✅ Nom modifié : '+name);
-    }catch(e){showToast('⚠️ Modification refusée par Firebase.');}
-    return;
-  }
-  if(gzConsoleTypeKey(name)===key)return;
-  const postes=DB.get('postes')||[];
-  for(let i=0;i<postes.length;i++){
-    const p=postes[i];
-    if(gzConsoleTypeKey(gzTarifCategory(p))===key){
-      const a=activeForPoste(p,i);
-      if(a&&a.actif)return showToast('⚠️ Terminez la séance de '+p.num+' avant de renommer ce type.');
+    }else{
+      // Type libre : renommer les références sans toucher aux recettes.
+      const postes=DB.get('postes')||[];
+      for(let i=0;i<postes.length;i++){
+        const p=postes[i];
+        if(gzConsoleTypeKey(gzTarifCategory(p))===key){
+          const a=activeForPoste(p,i);
+          if(a&&a.actif)throw Error('Termine d’abord la séance du poste '+p.num+'.');
+        }
+      }
+      const rename=v=>gzConsoleTypeKey(v)===key?name:v;
+      const catalog=(DB.get('tarif_console_types')||[]).map(rename);
+      if(!catalog.some(x=>gzConsoleTypeKey(x)===gzConsoleTypeKey(name)))catalog.push(name);
+      const tariffs=(DB.get('tarifs')||[]).map(t=>({...t,console:rename(t.console)}));
+      const linkedPosts=postes.map(p=>{
+        if(gzConsoleTypeKey(p.type)==='autres'&&gzConsoleTypeKey(p.typeCustom)===key)return {...p,typeCustom:name};
+        if(gzConsoleTypeKey(p.type)===key)return {...p,type:name};
+        return p;
+      });
+      await fbRoot.update({tarif_console_types:catalog,tarifs:tariffs,postes:linkedPosts});
+      DB._cache.tarif_console_types=catalog;DB._cache.tarifs=tariffs;DB._cache.postes=linkedPosts;
+      activeConsoleTab=name;
     }
-  }
-  if(!confirm('Renommer « '+former+' » en « '+name+' » ? Les tarifs et postes correspondants seront conservés.'))return;
-  const rename=v=>gzConsoleTypeKey(v)===key?name:v;
-  const catalog=gzConsoleTarifTypes().filter(x=>!gzBuiltinConsoleType(x)).map(rename);
-  const tarifList=(DB.get('tarifs')||[]).map(t=>({...t,console:rename(t.console)}));
-  const posteList=postes.map(p=>{
-    if(gzConsoleTypeKey(p.type)==='autres'&&gzConsoleTypeKey(p.typeCustom)===key)return {...p,typeCustom:name};
-    if(gzConsoleTypeKey(p.type)===key)return {...p,type:name};
-    return p;
-  });
-  try{
-    await fbRoot.update({tarif_console_types:catalog,tarifs:tarifList,postes:posteList});
-    DB._cache.tarif_console_types=catalog;DB._cache.tarifs=tarifList;DB._cache.postes=posteList;
-    activeConsoleTab=name;renderTarifs();renderPostes();showToast('✅ Type renommé : '+name);
-  }catch(e){showToast('⚠️ Modification refusée par Firebase.');}
+    closeModal('mo-gz-rename-type');
+    renderTarifs();renderPostes();renderHome();
+    showToast('✅ Type renommé : '+name);
+  }catch(e){
+    showToast('⚠️ '+(e&&e.message?e.message:'Modification refusée par Firebase.'));
+  }finally{btn.disabled=false;}
 }
-async function gzDeleteTarifType(){
-  const type=activeConsoleTab,key=gzConsoleTypeKey(type);
+// Protection : un type associé à un poste reste en place. Les tarifs peuvent
+// être supprimés explicitement en même temps que le type, sans toucher aux ventes.
+function gzDeleteLinkedPostes(type){
+  const key=gzConsoleTypeKey(type);
+  return (DB.get('postes')||[]).filter(p=>
+    gzConsoleTypeKey(p.type)===key ||
+    (gzConsoleTypeKey(p.type)==='autres'&&gzConsoleTypeKey(p.typeCustom)===key));
+}
+function gzDeleteTarifType(){
+  const type=activeConsoleTab;
   if(gzProtectedConsoleType(type))return showToast('⚠️ PS3, PS4 et PS5 sont protégés.');
+  const label=gzConsoleTypeLabel(type);
+  const linked=gzDeleteLinkedPostes(type);
+  const tarifCount=(DB.get('tarifs')||[]).filter(t=>gzConsoleTypeKey(t.console||'PS5')===gzConsoleTypeKey(type)).length;
+  const info=document.getElementById('gz-type-delete-info');
+  const btn=document.getElementById('gz-type-delete-confirm');
+  const ackWrap=document.getElementById('gz-type-delete-ack-wrap');
+  const ack=document.getElementById('gz-type-delete-ack');ack.checked=false;
+  if(linked.length){
+    info.innerHTML='⚠️ <b>« '+esc(label)+' » est utilisé par '+linked.length+' poste(s) : '+linked.map(p=>esc(p.num)).join(', ')+'.</b><p style="margin-top:8px">Pour le supprimer, ouvre <b>PATRON → Postes → ✏️</b> et attribue un autre type à ces postes. Les séances doivent être terminées avant ce changement.</p>';
+    btn.disabled=true;ackWrap.style.display='none';
+  }else{
+    info.innerHTML='Supprimer le type <b>« '+esc(label)+' »</b> ?<p style="margin-top:9px">'+(tarifCount?'<b>⚠️ '+tarifCount+' tarif(s) seront également supprimés.</b>':'Aucun tarif ne sera supprimé.')+'</p><p style="margin-top:8px">Les comptes gérants, les prises Tuya, les recettes et les anciens rapports seront conservés. Le type pourra être recréé.</p>';
+    ackWrap.style.display=tarifCount?'block':'none';
+    btn.disabled=!!tarifCount;
+  }
+  openModal('mo-gz-delete-type');
+}
+function gzDeleteTypeAckChanged(){
+  const linked=gzDeleteLinkedPostes(activeConsoleTab);
+  const chk=document.getElementById('gz-type-delete-ack');
+  document.getElementById('gz-type-delete-confirm').disabled=linked.length>0||!chk.checked;
+}
+async function gzConfirmDeleteTarifType(){
+  const type=activeConsoleTab,key=gzConsoleTypeKey(type);
+  if(gzProtectedConsoleType(type))return;
+  const linked=gzDeleteLinkedPostes(type);
+  if(linked.length)return showToast('⚠️ Ce type est encore utilisé par un poste.');
   if(!fbRoot)return showToast('⚠️ Connexion Firebase nécessaire.');
-  // Un ancien poste enregistré comme "Autres + PS2" utilise réellement PS2.
-  // On autorise le retrait de la catégorie Autres lorsqu'elle ne sert qu'à
-  // contenir ce nom personnalisé ; sa configuration reste intacte.
-  const posteInUse=(DB.get('postes')||[]).find(p=>
-    gzConsoleTypeKey(gzTarifCategory(p))===key);
-  if(posteInUse)return alert('Impossible de supprimer ce type : le poste « '+posteInUse.num+' » l’utilise. Changez son type dans PATRON → Postes avant de supprimer.');
-  const tariffInUse=(DB.get('tarifs')||[]).filter(t=>gzConsoleTypeKey(t.console||'PS5')===key);
-  if(tariffInUse.length)return alert('Impossible de supprimer « '+gzConsoleTypeLabel(type)+' » : '+tariffInUse.length+' tarif(s) sont encore enregistrés. Modifiez ou supprimez ces tarifs individuellement, puis recommencez.');
-  if(!confirm('Retirer « '+gzConsoleTypeLabel(type)+' » des types de consoles et des tarifs ? Aucune recette ne sera effacée.'))return;
+  const tarifCount=(DB.get('tarifs')||[]).filter(t=>gzConsoleTypeKey(t.console||'PS5')===key).length;
+  if(tarifCount && !document.getElementById('gz-type-delete-ack').checked)
+    return showToast('⚠️ Confirme la suppression des tarifs.');
+  const btn=document.getElementById('gz-type-delete-confirm');btn.disabled=true;
   const known=Array.isArray(DB.get('tarif_console_types'))?DB.get('tarif_console_types'):[];
   const catalog=known.filter(x=>gzConsoleTypeKey(x)!==key);
   const hidden=Array.isArray(DB.get('tarif_hidden_types'))?DB.get('tarif_hidden_types'):[];
   const newHidden=[...hidden.filter(x=>gzConsoleTypeKey(x)!==key),key];
   const labels={...(DB.get('tarif_type_labels')||{})};delete labels[key];
+  const nextTarifs=(DB.get('tarifs')||[]).filter(t=>gzConsoleTypeKey(t.console||'PS5')!==key);
   try{
-    await fbRoot.update({tarif_console_types:catalog,tarif_hidden_types:newHidden,tarif_type_labels:labels});
-    DB._cache.tarif_console_types=catalog;DB._cache.tarif_hidden_types=newHidden;DB._cache.tarif_type_labels=labels;
-    activeConsoleTab='PS5';renderTarifs();showToast('✅ Type supprimé de la liste. Il pourra être réactivé plus tard.');
-  }catch(e){showToast('⚠️ Suppression refusée par Firebase.');}
+    // Une seule opération atomique dans la salle, pas de remise à zéro globale.
+    await fbRoot.update({tarif_console_types:catalog,tarif_hidden_types:newHidden,tarif_type_labels:labels,tarifs:nextTarifs});
+    Object.assign(DB._cache,{tarif_console_types:catalog,tarif_hidden_types:newHidden,tarif_type_labels:labels,tarifs:nextTarifs});
+    closeModal('mo-gz-delete-type');activeConsoleTab='PS5';renderTarifs();renderPostes();renderHome();
+    showToast('✅ Type supprimé. Historique et recettes conservés.');
+  }catch(e){showToast('⚠️ Suppression refusée par Firebase : '+(e&&e.message||''));}
+  finally{btn.disabled=false;}
 }
 function renderTarifs(){
   renderConsoleTabs();
