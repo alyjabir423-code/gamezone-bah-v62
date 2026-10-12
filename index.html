@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="GZ Patron">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="manifest" href="./manifest.webmanifest">
-<title>GameZone Patron V35 — Fin rapide et iPhone</title>
+<title>GameZone Bah V62 — Patron</title>
 <style>
 /* Police système : la page Patron s'affiche même si Google Fonts est inaccessible. */
 :root{--bg:#0a0f1e;--surface:#0f1628;--card:#162040;--border:#1e2d52;--gold:#f59e0b;--gl:#fcd34d;--green:#10b981;--red:#ef4444;--blue:#6366f1;--purple:#8b5cf6;--text:#f0f4ff;--muted:#64748b;--sub:#94a3b8;--fd:'Rajdhani',sans-serif;--fb:'Inter',sans-serif;--r:14px;--rs:9px}
@@ -379,7 +379,7 @@ button,.ni,.ctl-btn{touch-action:manipulation}
   </div>
   <div style="margin-top:20px;padding:12px 16px;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.3);border-radius:10px;max-width:340px;width:100%;text-align:center">
     <div style="font-size:12px;font-weight:700;color:#34d399;margin-bottom:2px">🔐 Connexion sécurisée Firebase</div>
-    <div style="font-size:11px;color:var(--muted)">Salle CP1 Gaming · accès réservé au compte Patron autorisé.</div>
+    <div style="font-size:11px;color:var(--muted)">GameZone Bah V62 · accès réservé au compte Patron autorisé.</div>
   </div>
 </div>
 
@@ -1798,11 +1798,20 @@ async function startSecurePatron(user){
   try{
     document.getElementById('fb-loading').style.display='flex';
     const roomNode='gz_'+ROOM_KEY;
-    const roleSnap=await firebase.database().ref('access/'+user.uid+'/rooms/'+roomNode).once('value');
-    const role=roleSnap.val();
+    const rolePath='access/'+user.uid+'/rooms/'+roomNode;
+    // Diagnostic non sensible : le UID Firebase aide à vérifier que le bon compte a été authentifié.
+    // Le rôle doit impérativement provenir de Realtime Database; aucun contournement des autorisations.
+    let role;
+    try {
+      const roleSnap=await firebase.database().ref(rolePath).once('value');
+      role=roleSnap.val();
+    } catch(readError) {
+      throw new Error('Lecture du rôle Firebase impossible ('+(readError.code||readError.message||'erreur réseau')+'). Chemin : '+rolePath+'. Ne modifie pas les règles sans vérifier.');
+    }
     if(role!=='patron'){
+      const diagnostic='Compte Firebase UID : '+user.uid+' ; salle : '+roomNode+' ; rôle lu : '+(role===null?'absent':String(role))+'.';
       await firebase.auth().signOut();
-      throw new Error('Ce compte n’est pas autorisé comme Patron de CP1 Gaming.');
+      throw new Error('Accès Patron refusé. '+diagnostic+' Compare ce UID avec Authentication et access dans Firebase.');
     }
     currentTenantKey=ROOM_KEY;
     localStorage.setItem('gz_room_key',ROOM_KEY);
