@@ -1,5 +1,5 @@
 // Historique prive Patron / partage Gerant — version 27
-const CACHE='gamezone-v62-personnel-individuel-20261012-patron-01';
+const CACHE='gamezone-v62-tarifs-personnalises-20261012-patron-01';
 const ASSETS=['./','./index.html','./manifest.webmanifest'];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting()));

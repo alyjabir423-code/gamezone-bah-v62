@@ -495,6 +495,13 @@ button,.ni,.ctl-btn{touch-action:manipulation}
     <div class="page" id="page-tarifs">
       <div class="sh"><h2>Tarifs</h2><span id="nb-tarifs">0</span></div>
       <div class="ctabs" id="console-tabs"></div>
+      <div class="info-box" style="margin:10px 0 12px">✍️ <b>Types personnalisés :</b> créez par exemple PS2, Xbox ou Nintendo. Chaque type a ses propres tarifs ; les postes déjà créés sont conservés.
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
+          <input id="gz-new-tarif-type" type="text" maxlength="32" placeholder="Nom du type : ex. PS2" autocomplete="off" style="flex:1;min-width:130px;padding:12px;color:var(--text);background:var(--bg);border:1px solid var(--border);border-radius:9px;font-size:14px">
+          <button type="button" onclick="gzAddTarifType()" style="border:1px solid var(--gold);background:rgba(245,158,11,.15);color:var(--gl);border-radius:9px;padding:11px 13px;font-weight:700">＋ Ajouter type</button>
+        </div>
+        <button id="gz-rename-tarif-type" type="button" onclick="gzRenameTarifType()" style="display:none;margin-top:10px;padding:9px 12px;border-radius:9px;background:rgba(99,102,241,.16);border:1px solid var(--blue);color:var(--text)">✏️ Renommer ce type</button>
+      </div>
       <div class="card" id="list-tarifs"></div>
       <button class="btn-add" onclick="openModalTarif()">+ Ajouter un tarif</button>
     </div>
@@ -871,6 +878,35 @@ function today(){return businessDate(new Date()).toDateString()}
 let loggedIn=false;
 const CONSOLES=['PS5','PS4','PS3','Autres'];
 let activeConsoleTab='PS5';
+// V62 — les noms personnalisés des tarifs sont enregistrés dans Firebase.
+// Les données existantes "Autres" restent intactes pour éviter de changer les prix.
+function gzConsoleTypeName(value){return String(value==null?'':value).trim().replace(/\s+/g,' ').slice(0,32);}
+function gzConsoleTypeKey(value){return gzConsoleTypeName(value).toLocaleLowerCase('fr');}
+function gzConsoleTarifTypes(){
+  const result=[...CONSOLES], seen=new Set(result.map(gzConsoleTypeKey));
+  const add=(v)=>{const name=gzConsoleTypeName(v);const key=gzConsoleTypeKey(name);if(name&&key&&!seen.has(key)){seen.add(key);result.push(name);}};
+  const configured=DB.get('tarif_console_types')||[];
+  if(Array.isArray(configured))configured.forEach(add);
+  const postes=DB.get('postes')||[];
+  if(Array.isArray(postes))postes.forEach(p=>{if(p){if(gzConsoleTypeKey(p.type)==='autres')add(p.typeCustom);else add(p.type);}});
+  const tarifs=DB.get('tarifs')||[];
+  if(Array.isArray(tarifs))tarifs.forEach(t=>{if(t)add(t.console);});
+  return result;
+}
+function gzTarifCategory(poste){
+  const type=gzConsoleTypeName(poste&&poste.type||'PS5');
+  return gzConsoleTypeKey(type)==='autres' && gzConsoleTypeName(poste&&poste.typeCustom)
+    ? gzConsoleTypeName(poste.typeCustom) : type;
+}
+function gzTarifsForPoste(poste){
+  const all=DB.get('tarifs')||[];
+  const category=gzTarifCategory(poste),type=gzConsoleTypeName(poste&&poste.type||'PS5');
+  const matched=all.filter(t=>gzConsoleTypeKey(t.console||'PS5')===gzConsoleTypeKey(category));
+  if(matched.length)return matched;
+  if(gzConsoleTypeKey(type)==='autres')return all.filter(t=>gzConsoleTypeKey(t.console)==='autres');
+  return [];
+}
+
 
 // ══════════════════════════════════════
 // V2 — SYNCHRO COMPATIBLE APP GÉRANT + GESTION DIRECTE PATRON
@@ -998,7 +1034,7 @@ function ownerSubtractPaymentBreakdown(source,detail,amount){
 function ownerSubtractPosteBreakdown(source,num,amount){const out=Object.assign({},source||{});out[num]=Math.max(0,money(out[num])-money(amount));if(out[num]===0)delete out[num];return out;}
 function ownerFmtClock(ts){if(!ts)return '—';const d=new Date(Number(ts));return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;}
 
-function ownerTarifs(poste){return (DB.get('tarifs')||[]).filter(t=>(t.console||'PS5')===(poste.type||'PS5')).sort((a,b)=>(Number(a.min)||0)-(Number(b.min)||0));}
+function ownerTarifs(poste){return gzTarifsForPoste(poste).sort((a,b)=>(Number(a.min)||0)-(Number(b.min)||0));}
 // V10 — annonces vocales Patron robustes + avertissement 5 minutes
 function ownerSpeechPosteName(num){const m=String(num==null?'':num).match(/\d+/);return m?('Poste '+m[0]):String(num||'Poste');}
 let ownerVoiceUtterance=null,ownerVoiceRetryTimer=null,ownerVoicePrimed=false;
@@ -2118,15 +2154,75 @@ async function testerPrise(){
   }catch(e){res.className='test-result tr-err';res.textContent='❌ Worker Tuya indisponible. Vérifiez Internet.';}
 }
 
-// TARIFS
+// TARIFS : PS3/PS4/PS5/Autres restent, les autres noms sont personnalisables.
 function renderConsoleTabs(){
   const tabs=document.getElementById('console-tabs');
-  tabs.innerHTML=CONSOLES.map(c=>`<div class="ctab ${c===activeConsoleTab?'sel':''}" onclick="selConsoleTab('${c}')">${c}</div>`).join('');
+  const all=gzConsoleTarifTypes();
+  if(!all.some(c=>gzConsoleTypeKey(c)===gzConsoleTypeKey(activeConsoleTab)))activeConsoleTab='Autres';
+  tabs.style.flexWrap='wrap';
+  tabs.innerHTML=all.map((c,i)=>`<div class="ctab ${gzConsoleTypeKey(c)===gzConsoleTypeKey(activeConsoleTab)?'sel':''}" onclick="gzSelectTarifType(${i})">${esc(c)}</div>`).join('');
+  const renameBtn=document.getElementById('gz-rename-tarif-type');
+  if(renameBtn)renameBtn.style.display=CONSOLES.some(x=>gzConsoleTypeKey(x)===gzConsoleTypeKey(activeConsoleTab))?'none':'inline-block';
+}
+function gzSelectTarifType(index){
+  const selected=gzConsoleTarifTypes()[index];
+  if(selected)selConsoleTab(selected);
 }
 function selConsoleTab(c){
   activeConsoleTab=c;
-  renderConsoleTabs();
   renderTarifs();
+}
+function gzRenderTarifSelect(selected){
+  const el=document.getElementById('t-console');
+  const values=gzConsoleTarifTypes();
+  if(selected && !values.some(x=>gzConsoleTypeKey(x)===gzConsoleTypeKey(selected)))values.push(selected);
+  el.innerHTML=values.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');
+  el.value=selected||activeConsoleTab;
+}
+function gzAddTarifType(){
+  const input=document.getElementById('gz-new-tarif-type');
+  const name=gzConsoleTypeName(input&&input.value);
+  if(name.length<2)return showToast('⚠️ Écrivez un nom de 2 à 32 caractères.');
+  const existing=gzConsoleTarifTypes().find(c=>gzConsoleTypeKey(c)===gzConsoleTypeKey(name));
+  if(existing){activeConsoleTab=existing;renderTarifs();input.value='';return showToast('ℹ️ Type existant : '+existing);}
+  const known=Array.isArray(DB.get('tarif_console_types'))?DB.get('tarif_console_types'):[];
+  DB.set('tarif_console_types',[...known,name]);
+  input.value='';activeConsoleTab=name;
+  renderTarifs();showToast('✅ Nouveau type créé : '+name);
+}
+async function gzRenameTarifType(){
+  const former=activeConsoleTab;
+  if(CONSOLES.some(x=>gzConsoleTypeKey(x)===gzConsoleTypeKey(former)))return showToast('⚠️ Les types d’origine ne sont pas renommables.');
+  const raw=prompt('Nouveau nom pour '+former+' :',former);
+  if(raw===null)return;
+  const name=gzConsoleTypeName(raw);
+  if(name.length<2)return showToast('⚠️ Nom de 2 à 32 caractères requis.');
+  if(gzConsoleTypeKey(name)===gzConsoleTypeKey(former))return;
+  if(gzConsoleTarifTypes().some(x=>gzConsoleTypeKey(x)===gzConsoleTypeKey(name)))return showToast('⚠️ Ce nom existe déjà.');
+  const postes=DB.get('postes')||[];
+  for(let i=0;i<postes.length;i++){
+    const p=postes[i];
+    if(gzConsoleTypeKey(gzTarifCategory(p))===gzConsoleTypeKey(former)){
+      const a=activeForPoste(p,i);
+      if(a&&a.actif)return showToast('⚠️ Terminez la séance de '+p.num+' avant de renommer ce type.');
+    }
+  }
+  if(!confirm('Renommer « '+former+' » en « '+name+' » ? Les tarifs et postes correspondants seront conservés.'))return;
+  if(!fbRoot)return showToast('⚠️ Connexion Firebase nécessaire.');
+  const rename=v=>gzConsoleTypeKey(v)===gzConsoleTypeKey(former)?name:v;
+  const catalog=gzConsoleTarifTypes().filter(x=>!CONSOLES.some(y=>gzConsoleTypeKey(x)===gzConsoleTypeKey(y))).map(rename);
+  const tarifList=(DB.get('tarifs')||[]).map(t=>({...t,console:rename(t.console)}));
+  const posteList=postes.map(p=>{
+    if(gzConsoleTypeKey(p.type)==='autres'&&gzConsoleTypeKey(p.typeCustom)===gzConsoleTypeKey(former))return {...p,typeCustom:name};
+    if(gzConsoleTypeKey(p.type)===gzConsoleTypeKey(former))return {...p,type:name};
+    return p;
+  });
+  try{
+    // Mise à jour simultanée pour ne pas mélanger les tarifs et les postes.
+    await fbRoot.update({tarif_console_types:catalog,tarifs:tarifList,postes:posteList});
+    DB._cache.tarif_console_types=catalog;DB._cache.tarifs=tarifList;DB._cache.postes=posteList;
+    activeConsoleTab=name;renderTarifs();renderPostes();showToast('✅ Type renommé : '+name);
+  }catch(e){showToast('⚠️ Modification refusée par Firebase.');}
 }
 function renderTarifs(){
   renderConsoleTabs();
@@ -2134,7 +2230,7 @@ function renderTarifs(){
   document.getElementById('nb-tarifs').textContent=all.length+' tarif'+(all.length>1?'s':'');
   const tarifs=all.filter(t=>(t.console||'PS5')===activeConsoleTab);
   const list=document.getElementById('list-tarifs');
-  if(!tarifs.length){list.innerHTML=`<div class="trow"><span style="font-size:12px;color:var(--muted)">Aucun tarif pour ${activeConsoleTab}.</span></div>`;return;}
+  if(!tarifs.length){list.innerHTML=`<div class="trow"><span style="font-size:12px;color:var(--muted)">Aucun tarif pour ${esc(activeConsoleTab)}. Ajoutez un tarif ci-dessous.</span></div>`;return;}
   list.innerHTML=[...tarifs].sort((a,b)=>a.min-b.min).map(t=>{
     const i=all.indexOf(t);
     return `<div class="trow">
@@ -2150,13 +2246,13 @@ function openModalTarif(idx=-1){
   if(idx>=0){
     const t=(DB.get('tarifs')||[])[idx];
     document.getElementById('mo-tarif-title').textContent='Modifier';
-    document.getElementById('t-console').value=t.console||'PS5';
+    gzRenderTarifSelect(t.console||'PS5');
     document.getElementById('t-min').value=t.min;
     document.getElementById('t-lbl').value=t.lbl;
     document.getElementById('t-prix').value=t.prix;
   } else {
     document.getElementById('mo-tarif-title').textContent='Nouveau tarif';
-    document.getElementById('t-console').value=activeConsoleTab;
+    gzRenderTarifSelect(activeConsoleTab);
     ['t-min','t-lbl','t-prix'].forEach(id=>document.getElementById(id).value='');
   }
   openModal('mo-tarif');setTimeout(()=>document.getElementById('t-min').focus(),200);
@@ -2172,7 +2268,7 @@ function saveTarif(){
   const idx=parseInt(document.getElementById('t-edit-idx').value);
   if(idx>=0){tarifs[idx]={console:console_,min,lbl,prix};showToast('✅ Tarif modifié');}
   else{tarifs.push({console:console_,min,lbl,prix});showToast('✅ Tarif ajouté');}
-  DB.set('tarifs',tarifs);closeModal('mo-tarif');renderTarifs();
+  DB.set('tarifs',tarifs);activeConsoleTab=console_;closeModal('mo-tarif');renderTarifs();
 }
 function delTarif(i){
   if(!confirm('Supprimer ?'))return;
