@@ -500,7 +500,11 @@ button,.ni,.ctl-btn{touch-action:manipulation}
           <input id="gz-new-tarif-type" type="text" maxlength="32" placeholder="Nom du type : ex. PS2" autocomplete="off" style="flex:1;min-width:130px;padding:12px;color:var(--text);background:var(--bg);border:1px solid var(--border);border-radius:9px;font-size:14px">
           <button type="button" onclick="gzAddTarifType()" style="border:1px solid var(--gold);background:rgba(245,158,11,.15);color:var(--gl);border-radius:9px;padding:11px 13px;font-weight:700">＋ Ajouter type</button>
         </div>
-        <button id="gz-rename-tarif-type" type="button" onclick="gzRenameTarifType()" style="display:none;margin-top:10px;padding:9px 12px;border-radius:9px;background:rgba(99,102,241,.16);border:1px solid var(--blue);color:var(--text)">✏️ Renommer ce type</button>
+        <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:10px">
+          <button id="gz-rename-tarif-type" type="button" onclick="gzRenameTarifType()" style="display:none;padding:10px 12px;border-radius:9px;background:rgba(99,102,241,.16);border:1px solid var(--blue);color:var(--text);font-weight:700">✏️ Renommer ce type</button>
+          <button id="gz-delete-tarif-type" type="button" onclick="gzDeleteTarifType()" style="display:none;padding:10px 12px;border-radius:9px;background:rgba(239,68,68,.1);border:1px solid #ef4444;color:#fca5a5;font-weight:700">🗑 Supprimer ce type</button>
+        </div>
+        <div style="font-size:10px;color:var(--muted);margin-top:9px">PS1 et « Autres » sont modifiables. Les types utilisés par un poste ou un tarif ne peuvent pas être supprimés par erreur.</div>
       </div>
       <div class="card" id="list-tarifs"></div>
       <button class="btn-add" onclick="openModalTarif()">+ Ajouter un tarif</button>
@@ -616,12 +620,13 @@ button,.ni,.ctl-btn{touch-action:manipulation}
         <option value="PS4">PS4</option>
         <option value="PS3">PS3</option>
         <option value="Autres">Autres</option>
+        <option value="PS1">PS1</option>
       </select>
     </div>
     <div class="ig" id="p-custom-wrap" style="display:none">
-      <label>Nom de la console (Autres)</label>
+      <label>Nom précis de la console (facultatif pour Autres)</label>
       <input id="p-custom-type" type="text" maxlength="40" placeholder="Ex : PS2, Xbox, décodeur Android" autocomplete="off">
-      <div style="font-size:10px;color:var(--muted)">Le nom apparaît chez le Patron et le Gérant. Les tarifs restent dans la catégorie « Autres ».</div>
+      <div style="font-size:10px;color:var(--muted)">Exemple : PS2. Si des tarifs PS2 existent, ils seront utilisés ; sinon, les tarifs génériques « Autres » restent disponibles.</div>
     </div>
 
     <div style="margin:16px 0 10px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">🔌 Prise Tuya Cloud</div>
@@ -876,15 +881,29 @@ function connectTenant(tenantKey){
 
 function today(){return businessDate(new Date()).toDateString()}
 let loggedIn=false;
-const CONSOLES=['PS5','PS4','PS3','Autres'];
+const CONSOLES=['PS5','PS4','PS3','Autres','PS1'];
+const GZ_PROTECTED_CONSOLE_TYPES=['PS5','PS4','PS3'];
 let activeConsoleTab='PS5';
-// V62 — les noms personnalisés des tarifs sont enregistrés dans Firebase.
-// Les données existantes "Autres" restent intactes pour éviter de changer les prix.
+// Types : PS1 et Autres peuvent changer de libellé ou être masqués sans
+// modifier leurs identifiants de stockage, les tarifs ni les prises Tuya.
 function gzConsoleTypeName(value){return String(value==null?'':value).trim().replace(/\s+/g,' ').slice(0,32);}
 function gzConsoleTypeKey(value){return gzConsoleTypeName(value).toLocaleLowerCase('fr');}
+function gzProtectedConsoleType(value){return GZ_PROTECTED_CONSOLE_TYPES.some(c=>gzConsoleTypeKey(c)===gzConsoleTypeKey(value));}
+function gzBuiltinConsoleType(value){return CONSOLES.some(c=>gzConsoleTypeKey(c)===gzConsoleTypeKey(value));}
+function gzHiddenTarifTypes(){const hidden=DB.get('tarif_hidden_types');return new Set((Array.isArray(hidden)?hidden:[]).map(gzConsoleTypeKey));}
+function gzConsoleTypeLabel(value){
+  const labels=DB.get('tarif_type_labels')||{};
+  return gzConsoleTypeName(labels[gzConsoleTypeKey(value)]||value);
+}
+function gzPosteTypeLabel(p){
+  const custom=gzConsoleTypeName(p&&p.typeCustom);
+  return custom||gzConsoleTypeLabel(p&&p.type||'');
+}
 function gzConsoleTarifTypes(){
-  const result=[...CONSOLES], seen=new Set(result.map(gzConsoleTypeKey));
-  const add=(v)=>{const name=gzConsoleTypeName(v);const key=gzConsoleTypeKey(name);if(name&&key&&!seen.has(key)){seen.add(key);result.push(name);}};
+  const result=[],seen=new Set(),hidden=gzHiddenTarifTypes();
+  const add=v=>{const name=gzConsoleTypeName(v),key=gzConsoleTypeKey(name);
+    if(name&&key&&!hidden.has(key)&&!seen.has(key)){seen.add(key);result.push(name);}};
+  CONSOLES.forEach(add);
   const configured=DB.get('tarif_console_types')||[];
   if(Array.isArray(configured))configured.forEach(add);
   const postes=DB.get('postes')||[];
@@ -2033,7 +2052,7 @@ function renderHome(){
         const w=(rev.perPoste.week[p.num]||0).toLocaleString('fr-FR');
         const t=(rev.perPoste.total[p.num]||0).toLocaleString('fr-FR');
         return `<div class="hpr" style="flex-direction:column;align-items:stretch;gap:2px">
-          <div style="font-size:12px;font-weight:600">${p.num} — ${p.typeCustom||p.type}</div>
+          <div style="font-size:12px;font-weight:600">${esc(p.num)} — ${esc(gzPosteTypeLabel(p))}</div>
           <div style="font-size:10px;color:var(--muted)">Jour : ${d} F · Semaine : ${w} F · Total : ${t} F</div>
         </div>`;
       }).join('')
@@ -2070,7 +2089,7 @@ function renderPostes(){
       <div class="prise-dot ${p.devid?'pd-off':'pd-none'}"></div>
       <div style="font-family:var(--fd);font-size:17px;font-weight:700;color:var(--gold);min-width:36px">${p.num}</div>
       <div style="flex:1">
-        <div style="font-size:13px;font-weight:500">${p.typeCustom||p.type}</div>
+        <div style="font-size:13px;font-weight:500">${esc(gzPosteTypeLabel(p))}</div>
         <div style="font-size:10px;color:var(--muted)">${p.devid?(gzSharedPlugPartners(p).length?'🔌 Prise partagée avec '+esc(gzSharedPlugPartners(p).map(x=>x.num).join(', ')):'🔌 Cloud Tuya lié'):'⚠️ Prise non configurée'}</div>
       </div>
       <div style="display:flex;gap:6px">
@@ -2081,8 +2100,17 @@ function renderPostes(){
 }
 
 function gzToggleCustomConsole(){
-  const isOther=document.getElementById('p-type').value==='Autres';
+  const isOther=gzConsoleTypeKey(document.getElementById('p-type').value)==='autres';
   document.getElementById('p-custom-wrap').style.display=isOther?'block':'none';
+}
+function gzRefreshPosteTypeSelect(selected){
+  const el=document.getElementById('p-type');
+  const values=gzConsoleTarifTypes();
+  if(selected&&!values.some(x=>gzConsoleTypeKey(x)===gzConsoleTypeKey(selected)))values.push(selected);
+  el.innerHTML=values.map(x=>`<option value="${esc(x)}">${esc(gzConsoleTypeLabel(x))}</option>`).join('');
+  const found=values.find(x=>gzConsoleTypeKey(x)===gzConsoleTypeKey(selected||'PS5'))||values[0]||'PS5';
+  el.value=found;
+  gzToggleCustomConsole();
 }
 function openModalPoste(idx=-1){
   document.getElementById('p-edit-idx').value=idx;
@@ -2091,8 +2119,8 @@ function openModalPoste(idx=-1){
     const p=(DB.get('postes')||[])[idx];
     document.getElementById('mo-poste-title').textContent='Modifier le poste';
     document.getElementById('p-num').value=p.num||'';
-    document.getElementById('p-type').value=['PS5','PS4','PS3','Autres'].includes(p.type)?p.type:'Autres';
-    document.getElementById('p-custom-type').value=p.typeCustom||(p.type==='Autres'?'':(p.type&&!['PS5','PS4','PS3'].includes(p.type)?p.type:''));
+    gzRefreshPosteTypeSelect(p.type||'Autres');
+    document.getElementById('p-custom-type').value=p.typeCustom||'';
     document.getElementById('p-ip').value=p.ip||'';
     document.getElementById('p-devid').value=p.devid||'';
     document.getElementById('p-key').value=p.key||'';
@@ -2101,7 +2129,7 @@ function openModalPoste(idx=-1){
     document.getElementById('mo-poste-title').textContent='Nouveau poste';
     ['p-num','p-type','p-ip','p-devid','p-key'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('p-ver').value='3.3';
-    document.getElementById('p-type').value='PS5';
+    gzRefreshPosteTypeSelect('PS5');
     document.getElementById('p-custom-type').value='';
   }
   gzToggleCustomConsole();
@@ -2115,7 +2143,6 @@ function savePoste(){
   const type=document.getElementById('p-type').value.trim();
   const typeCustom=type==='Autres'?document.getElementById('p-custom-type').value.trim():'';
   if(!num||!type){showToast('⚠️ Nom et type obligatoires');return;}
-  if(type==='Autres'&&!typeCustom){showToast('⚠️ Écrivez le nom de la console (ex : PS2)');return;}
   const postes=DB.get('postes')||[];
   const idx=parseInt(document.getElementById('p-edit-idx').value);
   const old=(idx>=0&&postes[idx])?postes[idx]:{};
@@ -2158,11 +2185,14 @@ async function testerPrise(){
 function renderConsoleTabs(){
   const tabs=document.getElementById('console-tabs');
   const all=gzConsoleTarifTypes();
-  if(!all.some(c=>gzConsoleTypeKey(c)===gzConsoleTypeKey(activeConsoleTab)))activeConsoleTab='Autres';
+  if(!all.some(c=>gzConsoleTypeKey(c)===gzConsoleTypeKey(activeConsoleTab)))activeConsoleTab=all[0]||'PS5';
   tabs.style.flexWrap='wrap';
-  tabs.innerHTML=all.map((c,i)=>`<div class="ctab ${gzConsoleTypeKey(c)===gzConsoleTypeKey(activeConsoleTab)?'sel':''}" onclick="gzSelectTarifType(${i})">${esc(c)}</div>`).join('');
+  tabs.innerHTML=all.map((c,i)=>`<div class="ctab ${gzConsoleTypeKey(c)===gzConsoleTypeKey(activeConsoleTab)?'sel':''}" onclick="gzSelectTarifType(${i})">${esc(gzConsoleTypeLabel(c))}</div>`).join('');
   const renameBtn=document.getElementById('gz-rename-tarif-type');
-  if(renameBtn)renameBtn.style.display=CONSOLES.some(x=>gzConsoleTypeKey(x)===gzConsoleTypeKey(activeConsoleTab))?'none':'inline-block';
+  const deleteBtn=document.getElementById('gz-delete-tarif-type');
+  const editable=!gzProtectedConsoleType(activeConsoleTab);
+  if(renameBtn)renameBtn.style.display=editable?'inline-block':'none';
+  if(deleteBtn)deleteBtn.style.display=editable?'inline-block':'none';
 }
 function gzSelectTarifType(index){
   const selected=gzConsoleTarifTypes()[index];
@@ -2176,61 +2206,117 @@ function gzRenderTarifSelect(selected){
   const el=document.getElementById('t-console');
   const values=gzConsoleTarifTypes();
   if(selected && !values.some(x=>gzConsoleTypeKey(x)===gzConsoleTypeKey(selected)))values.push(selected);
-  el.innerHTML=values.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');
-  el.value=selected||activeConsoleTab;
+  el.innerHTML=values.map(x=>`<option value="${esc(x)}">${esc(gzConsoleTypeLabel(x))}</option>`).join('');
+  el.value=values.find(x=>gzConsoleTypeKey(x)===gzConsoleTypeKey(selected||activeConsoleTab))||selected||activeConsoleTab;
 }
 function gzAddTarifType(){
   const input=document.getElementById('gz-new-tarif-type');
   const name=gzConsoleTypeName(input&&input.value);
   if(name.length<2)return showToast('⚠️ Écrivez un nom de 2 à 32 caractères.');
-  const existing=gzConsoleTarifTypes().find(c=>gzConsoleTypeKey(c)===gzConsoleTypeKey(name));
-  if(existing){activeConsoleTab=existing;renderTarifs();input.value='';return showToast('ℹ️ Type existant : '+existing);}
+  const hidden=gzHiddenTarifTypes();
+  const labelMatch=gzConsoleTarifTypes().find(c=>gzConsoleTypeKey(gzConsoleTypeLabel(c))===gzConsoleTypeKey(name));
+  const storedMatch=gzConsoleTarifTypes().find(c=>gzConsoleTypeKey(c)===gzConsoleTypeKey(name));
+  if(labelMatch||storedMatch){activeConsoleTab=labelMatch||storedMatch;renderTarifs();input.value='';return showToast('ℹ️ Ce type existe déjà.');}
+  const newKey=gzConsoleTypeKey(name);
+  if(hidden.has(newKey)){
+    // Réactiver un type masqué, sans toucher aux autres tarifs ni aux postes.
+    if(!fbRoot)return showToast('⚠️ Connexion Firebase nécessaire.');
+    const old=Array.isArray(DB.get('tarif_hidden_types'))?DB.get('tarif_hidden_types'):[];
+    const restored=old.filter(x=>gzConsoleTypeKey(x)!==newKey);
+    const builtIn=CONSOLES.find(x=>gzConsoleTypeKey(x)===newKey);
+    const type=builtIn||name;
+    const known=Array.isArray(DB.get('tarif_console_types'))?DB.get('tarif_console_types'):[];
+    const catalog=(!builtIn&&!known.some(x=>gzConsoleTypeKey(x)===newKey))?[...known,name]:known;
+    fbRoot.update({tarif_hidden_types:restored,tarif_console_types:catalog}).then(()=>{
+      DB._cache.tarif_hidden_types=restored;DB._cache.tarif_console_types=catalog;
+      activeConsoleTab=type;input.value='';renderTarifs();showToast('✅ Type réactivé : '+type);
+    }).catch(()=>showToast('⚠️ Réactivation refusée par Firebase.'));
+    return;
+  }
   const known=Array.isArray(DB.get('tarif_console_types'))?DB.get('tarif_console_types'):[];
   DB.set('tarif_console_types',[...known,name]);
   input.value='';activeConsoleTab=name;
   renderTarifs();showToast('✅ Nouveau type créé : '+name);
 }
 async function gzRenameTarifType(){
-  const former=activeConsoleTab;
-  if(CONSOLES.some(x=>gzConsoleTypeKey(x)===gzConsoleTypeKey(former)))return showToast('⚠️ Les types d’origine ne sont pas renommables.');
-  const raw=prompt('Nouveau nom pour '+former+' :',former);
+  const former=activeConsoleTab,key=gzConsoleTypeKey(former);
+  if(gzProtectedConsoleType(former))return showToast('⚠️ PS3, PS4 et PS5 sont protégés.');
+  const raw=prompt('Nouveau nom pour '+gzConsoleTypeLabel(former)+' :',gzConsoleTypeLabel(former));
   if(raw===null)return;
   const name=gzConsoleTypeName(raw);
   if(name.length<2)return showToast('⚠️ Nom de 2 à 32 caractères requis.');
-  if(gzConsoleTypeKey(name)===gzConsoleTypeKey(former))return;
-  if(gzConsoleTarifTypes().some(x=>gzConsoleTypeKey(x)===gzConsoleTypeKey(name)))return showToast('⚠️ Ce nom existe déjà.');
+  if(gzConsoleTarifTypes().some(x=>gzConsoleTypeKey(x)!==key&&
+      (gzConsoleTypeKey(x)===gzConsoleTypeKey(name)||gzConsoleTypeKey(gzConsoleTypeLabel(x))===gzConsoleTypeKey(name))))
+    return showToast('⚠️ Ce nom existe déjà.');
+  if(!fbRoot)return showToast('⚠️ Connexion Firebase nécessaire.');
+  // Les types d'origine Autres et PS1 gardent leur identifiant Firebase.
+  // Seul leur libellé change : aucune vente ni prise existante ne bouge.
+  if(gzBuiltinConsoleType(former)){
+    const labels={...(DB.get('tarif_type_labels')||{})};
+    if(gzConsoleTypeKey(name)===key)delete labels[key];else labels[key]=name;
+    if(!confirm('Afficher « '+gzConsoleTypeLabel(former)+' » sous le nom « '+name+' » ? Les tarifs et postes sont conservés.'))return;
+    try{
+      await fbRoot.child('tarif_type_labels').set(labels);
+      DB._cache.tarif_type_labels=labels;
+      renderTarifs();renderPostes();renderHome();showToast('✅ Nom modifié : '+name);
+    }catch(e){showToast('⚠️ Modification refusée par Firebase.');}
+    return;
+  }
+  if(gzConsoleTypeKey(name)===key)return;
   const postes=DB.get('postes')||[];
   for(let i=0;i<postes.length;i++){
     const p=postes[i];
-    if(gzConsoleTypeKey(gzTarifCategory(p))===gzConsoleTypeKey(former)){
+    if(gzConsoleTypeKey(gzTarifCategory(p))===key){
       const a=activeForPoste(p,i);
       if(a&&a.actif)return showToast('⚠️ Terminez la séance de '+p.num+' avant de renommer ce type.');
     }
   }
   if(!confirm('Renommer « '+former+' » en « '+name+' » ? Les tarifs et postes correspondants seront conservés.'))return;
-  if(!fbRoot)return showToast('⚠️ Connexion Firebase nécessaire.');
-  const rename=v=>gzConsoleTypeKey(v)===gzConsoleTypeKey(former)?name:v;
-  const catalog=gzConsoleTarifTypes().filter(x=>!CONSOLES.some(y=>gzConsoleTypeKey(x)===gzConsoleTypeKey(y))).map(rename);
+  const rename=v=>gzConsoleTypeKey(v)===key?name:v;
+  const catalog=gzConsoleTarifTypes().filter(x=>!gzBuiltinConsoleType(x)).map(rename);
   const tarifList=(DB.get('tarifs')||[]).map(t=>({...t,console:rename(t.console)}));
   const posteList=postes.map(p=>{
-    if(gzConsoleTypeKey(p.type)==='autres'&&gzConsoleTypeKey(p.typeCustom)===gzConsoleTypeKey(former))return {...p,typeCustom:name};
-    if(gzConsoleTypeKey(p.type)===gzConsoleTypeKey(former))return {...p,type:name};
+    if(gzConsoleTypeKey(p.type)==='autres'&&gzConsoleTypeKey(p.typeCustom)===key)return {...p,typeCustom:name};
+    if(gzConsoleTypeKey(p.type)===key)return {...p,type:name};
     return p;
   });
   try{
-    // Mise à jour simultanée pour ne pas mélanger les tarifs et les postes.
     await fbRoot.update({tarif_console_types:catalog,tarifs:tarifList,postes:posteList});
     DB._cache.tarif_console_types=catalog;DB._cache.tarifs=tarifList;DB._cache.postes=posteList;
     activeConsoleTab=name;renderTarifs();renderPostes();showToast('✅ Type renommé : '+name);
   }catch(e){showToast('⚠️ Modification refusée par Firebase.');}
 }
+async function gzDeleteTarifType(){
+  const type=activeConsoleTab,key=gzConsoleTypeKey(type);
+  if(gzProtectedConsoleType(type))return showToast('⚠️ PS3, PS4 et PS5 sont protégés.');
+  if(!fbRoot)return showToast('⚠️ Connexion Firebase nécessaire.');
+  // Un ancien poste enregistré comme "Autres + PS2" utilise réellement PS2.
+  // On autorise le retrait de la catégorie Autres lorsqu'elle ne sert qu'à
+  // contenir ce nom personnalisé ; sa configuration reste intacte.
+  const posteInUse=(DB.get('postes')||[]).find(p=>
+    gzConsoleTypeKey(gzTarifCategory(p))===key);
+  if(posteInUse)return alert('Impossible de supprimer ce type : le poste « '+posteInUse.num+' » l’utilise. Changez son type dans PATRON → Postes avant de supprimer.');
+  const tariffInUse=(DB.get('tarifs')||[]).filter(t=>gzConsoleTypeKey(t.console||'PS5')===key);
+  if(tariffInUse.length)return alert('Impossible de supprimer « '+gzConsoleTypeLabel(type)+' » : '+tariffInUse.length+' tarif(s) sont encore enregistrés. Modifiez ou supprimez ces tarifs individuellement, puis recommencez.');
+  if(!confirm('Retirer « '+gzConsoleTypeLabel(type)+' » des types de consoles et des tarifs ? Aucune recette ne sera effacée.'))return;
+  const known=Array.isArray(DB.get('tarif_console_types'))?DB.get('tarif_console_types'):[];
+  const catalog=known.filter(x=>gzConsoleTypeKey(x)!==key);
+  const hidden=Array.isArray(DB.get('tarif_hidden_types'))?DB.get('tarif_hidden_types'):[];
+  const newHidden=[...hidden.filter(x=>gzConsoleTypeKey(x)!==key),key];
+  const labels={...(DB.get('tarif_type_labels')||{})};delete labels[key];
+  try{
+    await fbRoot.update({tarif_console_types:catalog,tarif_hidden_types:newHidden,tarif_type_labels:labels});
+    DB._cache.tarif_console_types=catalog;DB._cache.tarif_hidden_types=newHidden;DB._cache.tarif_type_labels=labels;
+    activeConsoleTab='PS5';renderTarifs();showToast('✅ Type supprimé de la liste. Il pourra être réactivé plus tard.');
+  }catch(e){showToast('⚠️ Suppression refusée par Firebase.');}
+}
 function renderTarifs(){
   renderConsoleTabs();
   const all=DB.get('tarifs')||[];
   document.getElementById('nb-tarifs').textContent=all.length+' tarif'+(all.length>1?'s':'');
-  const tarifs=all.filter(t=>(t.console||'PS5')===activeConsoleTab);
+  const tarifs=all.filter(t=>gzConsoleTypeKey(t.console||'PS5')===gzConsoleTypeKey(activeConsoleTab));
   const list=document.getElementById('list-tarifs');
-  if(!tarifs.length){list.innerHTML=`<div class="trow"><span style="font-size:12px;color:var(--muted)">Aucun tarif pour ${esc(activeConsoleTab)}. Ajoutez un tarif ci-dessous.</span></div>`;return;}
+  if(!tarifs.length){list.innerHTML=`<div class="trow"><span style="font-size:12px;color:var(--muted)">Aucun tarif pour ${esc(gzConsoleTypeLabel(activeConsoleTab))}. Ajoutez un tarif ci-dessous.</span></div>`;return;}
   list.innerHTML=[...tarifs].sort((a,b)=>a.min-b.min).map(t=>{
     const i=all.indexOf(t);
     return `<div class="trow">
