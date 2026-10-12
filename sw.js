@@ -1,5 +1,5 @@
 // Historique prive Patron / partage Gerant — version 27
-const CACHE='gamezone-bah-v62-patron-auth-diag-20261012';
+const CACHE='gamezone-bah-v62-bonus-7-20261012-patron';
 const ASSETS=['./','./index.html','./manifest.webmanifest'];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting()));

@@ -1121,7 +1121,7 @@ function ownerBonusNotice(a){
 
 function renderControl(){
   const box=document.getElementById('control-postes');if(!box)return;const postes=DB.get('postes')||[];let actifs=0;
-  if(!postes.length){box.innerHTML='<div class="info-box" style="grid-column:1/-1">Aucun poste configuré.</div>';ownerRenderDashboard();ownerRenderJournal();return;}
+  if(!postes.length){box.innerHTML='<div class="info-box" style="grid-column:1/-1">Aucun poste configuré.</div>'+ownerRenderBonusCard(postes);ownerRenderDashboard();ownerRenderJournal();return;}
   box.innerHTML=ownerOrderedPostesEntries(postes).map(({p,i})=>{
     const a=activeForPoste(p,i)||{};if(a.actif)actifs++;
     const rest=remainingActive(a),timer=a.actif?fmtRest(rest):'—:——',amount=money(a.montantSession),cls=a.paused?'paused':(a.actif?'active':'');
