@@ -502,8 +502,10 @@ button,.ni,.ctl-btn{touch-action:manipulation}
     <!-- GÉRANTS -->
     <div class="page" id="page-gerants">
       <div class="sh"><h2>Gérants</h2><span id="nb-gerants">0</span></div>
+      <div class="info-box" style="margin-bottom:12px">🔐 Chaque gérant a son identifiant et son mot de passe personnel. Utilisez <b>BLOQUER</b> pour lui retirer aussitôt l'accès. Le mot de passe n'est ni enregistré ni affiché ici.</div>
       <div class="card" id="list-gerants"></div>
       <button class="btn-add" onclick="openModalGerant()">+ Ajouter un gérant</button>
+      <button class="btn-add" style="background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.4);color:#93c5fd;margin-top:10px" onclick="gzImportCp1()">🔐 Associer le compte CP1 existant</button>
     </div>
 
     <!-- PARAMÈTRES -->
@@ -663,7 +665,8 @@ button,.ni,.ctl-btn{touch-action:manipulation}
     <div class="mt" id="mo-gerant-title">Nouveau gérant</div>
     <div class="ig"><label>Nom complet</label><input type="text" id="g-nom" placeholder="Ex: Konaté Ibrahima" autocomplete="off"></div>
     <div class="ig"><label>Identifiant</label><input type="text" id="g-id" placeholder="Ex: gerant1" autocomplete="off"></div>
-    <div class="info-box">🔐 Le mot de passe de connexion du Gérant est géré dans Firebase Authentication et n’est jamais enregistré ici.</div><input type="hidden" id="g-pass" value="">
+    <div class="ig"><label>Mot de passe personnel du Gérant</label><input type="password" id="g-pass" minlength="8" placeholder="8 caractères minimum" autocomplete="new-password"><small style="color:var(--muted)">Nouveau gérant : obligatoire. Modification : laisser vide pour conserver le mot de passe. Il reste dans Firebase Authentication, jamais dans la base de données.</small></div>
+    <div class="info-box">🔐 Chaque gérant possède son propre accès. Bloquer ou supprimer révoque son accès à la salle Firebase ; aucun mot de passe n'est stocké ici.</div>
     <input type="hidden" id="g-edit-idx" value="-1">
     <div class="ma">
       <button class="btn-cancel" onclick="closeModal('mo-gerant')">Annuler</button>
@@ -1855,6 +1858,7 @@ async function startSecurePatron(user){
     currentTenantKey=ROOM_KEY;
     localStorage.setItem('gz_room_key',ROOM_KEY);
     connectTenant(ROOM_KEY);
+    gzListenStaffDirectory();
     DB.onReady(function(){
       patronBootStarted=true;
       loggedIn=true;
@@ -1899,6 +1903,8 @@ async function doLogin(){
 }
 
 async function doLogout(){
+  if(gzStaffDirectoryRef){try{gzStaffDirectoryRef.off();}catch(e){}}
+  gzStaffDirectoryRef=null;gzStaffDirectory={};
   if(patronAuditRef){try{patronAuditRef.off();}catch(e){}} patronAuditRef=null;patronAuditActiveRoom='';patronAuditEvents={};
   if(patronActionsRef){try{patronActionsRef.off();}catch(e){}} patronActionsRef=null;patronActionsRoom='';patronActionsEvents={};
   loggedIn=false;
@@ -2173,40 +2179,199 @@ function delTarif(i){
   const tarifs=DB.get('tarifs')||[];tarifs.splice(i,1);DB.set('tarifs',tarifs);renderTarifs();showToast('Supprimé');
 }
 
-// GÉRANTS
+// GÉRANTS — droits individuels Firebase, sans mot de passe en clair.
+// IMPORTANT : les règles de la base doivent être mises à jour AVANT d'utiliser ces fonctions.
+const GZ_STAFF_ROOM='gz_'+ROOM_KEY;
+const GZ_LEGACY_CP1={id:'cp1',nom:'CP1',uid:'uFzrF93yqie214PJvnW9IihazsN2',email:'alyjabir423@gmail.com'};
+let gzStaffDirectory={};
+let gzStaffDirectoryRef=null;
+let gzStaffBusy=false;
+function gzStaffId(v){return String(v||'').trim().toLowerCase();}
+function gzStaffValidId(v){return /^[a-z0-9_-]{2,24}$/.test(String(v||''));}
+function gzStaffName(v){return String(v==null?'':v).trim();}
+function gzStaffEsc(v){return esc(String(v==null?'':v));}
+function gzStaffRow(id){return gzStaffDirectory[gzStaffId(id)]||null;}
+function gzStaffError(e){
+  const code=e&&(e.code||e.message)||'Erreur inconnue';
+  if(/permission.denied|PERMISSION_DENIED|permission_denied/i.test(String(code)))
+    return 'Autorisation Firebase refusée : installez les règles Gérants du ZIP avant de continuer.';
+  if(String(code).includes('EMAIL_EXISTS')||String(code).includes('email-already-in-use'))
+    return 'Adresse technique déjà utilisée. Réessayez.';
+  if(String(code).includes('weak-password'))return 'Mot de passe trop court : 8 caractères minimum.';
+  return 'Gestion gérant impossible : '+String(e&&e.message||code).slice(0,160);
+}
+function gzListenStaffDirectory(){
+  if(gzStaffDirectoryRef){try{gzStaffDirectoryRef.off();}catch(e){}}
+  gzStaffDirectoryRef=firebase.database().ref('staff_login/'+GZ_STAFF_ROOM);
+  gzStaffDirectoryRef.on('value',snap=>{
+    gzStaffDirectory=snap.val()||{};
+    if(loggedIn&&document.getElementById('page-gerants').classList.contains('active'))renderGerants();
+  },e=>console.warn('Lecture comptes gérants :',e));
+}
+function gzNewStaffEmail(id){
+  if(!(window.crypto&&crypto.getRandomValues))throw Error('Ouvrez le site HTTPS dans Chrome pour créer un compte.');
+  const bytes=new Uint8Array(12);crypto.getRandomValues(bytes);
+  return 'gz'+ROOM_KEY.toLowerCase().replace(/[^a-z0-9]/g,'')+'-'+id+'-'+Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('')+'@staff.gamezone.example.com';
+}
+async function gzProvisionAuth(email,password){
+  const app=firebase.apps.find(x=>x.name==='gz-gerants-provision')||firebase.initializeApp(firebaseConfig,'gz-gerants-provision');
+  const auth=app.auth();
+  await auth.setPersistence(firebase.auth.Auth.Persistence.NONE);
+  const result=await auth.createUserWithEmailAndPassword(email,password);
+  if(!result||!result.user)throw Error('Compte Firebase non créé');
+  const uid=result.user.uid;
+  await auth.signOut();
+  return uid;
+}
+function gzStaffRecord(uid,email,nom,enabled){
+  return {uid:String(uid),email:String(email),nom:String(nom),enabled:!!enabled,updatedAt:firebase.database.ServerValue.TIMESTAMP};
+}
+async function gzWriteStaffAccess(updates){
+  // Autorisation et index de connexion sont modifiés ensemble (mise à jour multipath atomique).
+  await firebase.database().ref().update(updates);
+}
+async function gzSaveLocalStaffProfile(g){
+  const list=(DB.get('gerants')||[]).slice();
+  const idx=list.findIndex(x=>gzStaffId(x.id)===gzStaffId(g.id));
+  if(idx>=0)list[idx]=Object.assign({},list[idx],{nom:g.nom,id:g.id});
+  else list.push({nom:g.nom,id:g.id});
+  await firebase.database().ref(GZ_STAFF_ROOM+'/gerants').set(list);
+  DB._cache.gerants=list;
+}
 function renderGerants(){
   const gerants=DB.get('gerants')||[];
   document.getElementById('nb-gerants').textContent=gerants.length+' gérant'+(gerants.length>1?'s':'');
   const list=document.getElementById('list-gerants');
-  if(!gerants.length){list.innerHTML='<div class="gcrow"><span style="font-size:12px;color:var(--muted)">Aucun gérant.</span></div>';return;}
-  list.innerHTML=gerants.map((g,i)=>`
-    <div class="gcrow">
-      <div class="gava">${g.nom.charAt(0)}${(g.nom.split(' ')[1]||'').charAt(0)}</div>
-      <div style="flex:1"><div style="font-size:13px;font-weight:600">${g.nom}</div><div style="font-size:10px;color:var(--muted)">@${g.id}</div></div>
-      <button class="btn-edit" onclick="editGerant(${i})">✏️</button>
-      <button class="btn-del" onclick="delGerant(${i})">🗑</button>
-    </div>`).join('');
+  if(!gerants.length){list.innerHTML='<div class="gcrow"><span style="font-size:12px;color:var(--muted)">Aucun gérant. Ajoutez-en un avec un mot de passe individuel.</span></div>';return;}
+  list.innerHTML=gerants.map((g,i)=>{
+    const account=gzStaffRow(g.id);
+    const enabled=!!(account&&account.enabled);
+    const status=(!account?'NON ACTIVÉ':enabled?'ACTIF':'BLOQUÉ');
+    const color=!account?'#fbbf24':enabled?'#4ade80':'#f87171';
+    const first=gzStaffName(g.nom).split(' ')[0]||'?';
+    const second=gzStaffName(g.nom).split(' ')[1]||'';
+    const label=first.charAt(0)+second.charAt(0);
+    return '<div class="gcrow" style="flex-wrap:wrap;gap:7px">'
+      +'<div class="gava">'+gzStaffEsc(label)+'</div>'
+      +'<div style="flex:1;min-width:140px"><div style="font-size:13px;font-weight:600">'+gzStaffEsc(g.nom)+'</div>'
+      +'<div style="font-size:10px;color:var(--muted)">@'+gzStaffEsc(g.id)+'</div>'
+      +'<div style="font-size:10px;color:'+color+'">'+status+'</div></div>'
+      +'<button class="btn-edit" onclick="editGerant('+i+')" title="Modifier le profil ou le mot de passe">✏️</button>'
+      +(account?'<button class="btn-edit" style="width:auto;min-width:73px;padding:4px 8px;color:'+(enabled?'#fbbf24':'#86efac')+'" onclick="gzToggleGerant('+i+')">'+(enabled?'BLOQUER':'RÉACTIVER')+'</button>':'')
+      +'<button class="btn-del" onclick="delGerant('+i+')" title="Supprimer définitivement">🗑</button>'
+      +'</div>';
+  }).join('');
 }
 function openModalGerant(idx=-1){
   document.getElementById('g-edit-idx').value=idx;
-  if(idx>=0){const g=(DB.get('gerants')||[])[idx];document.getElementById('mo-gerant-title').textContent='Modifier';document.getElementById('g-nom').value=g.nom;document.getElementById('g-id').value=g.id;document.getElementById('g-pass').value='';}
-  else{document.getElementById('mo-gerant-title').textContent='Nouveau gérant';['g-nom','g-id','g-pass'].forEach(id=>document.getElementById(id).value='');}
+  const inputId=document.getElementById('g-id');
+  document.getElementById('g-pass').value='';
+  if(idx>=0){
+    const g=(DB.get('gerants')||[])[idx];
+    document.getElementById('mo-gerant-title').textContent='Modifier le compte gérant';
+    document.getElementById('g-nom').value=g.nom;
+    inputId.value=g.id;
+    inputId.readOnly=true;
+    document.getElementById('g-pass').placeholder=gzStaffRow(g.id)?'Vide = mot de passe conservé':'Mot de passe pour activer ce compte';
+  }else{
+    document.getElementById('mo-gerant-title').textContent='Nouveau gérant';
+    document.getElementById('g-nom').value='';inputId.value='';inputId.readOnly=false;
+    document.getElementById('g-pass').placeholder='8 caractères minimum';
+  }
   openModal('mo-gerant');setTimeout(()=>document.getElementById('g-nom').focus(),200);
 }
 function editGerant(i){openModalGerant(i);}
-function saveGerant(){
-  const nom=document.getElementById('g-nom').value.trim();
-  const id=document.getElementById('g-id').value.trim();
-  if(!nom||!id){showToast('⚠️ Remplissez le nom et l’identifiant');return;}
-  const gerants=DB.get('gerants')||[];
-  const idx=parseInt(document.getElementById('g-edit-idx').value);
-  if(idx>=0){gerants[idx]={nom,id};showToast('✅ Profil Gérant modifié');}
-  else{if(gerants.find(g=>g.id===id)){showToast('⚠️ Identifiant déjà utilisé');return;}gerants.push({nom,id});showToast('✅ Profil Gérant ajouté');}
-  DB.set('gerants',gerants);closeModal('mo-gerant');renderGerants();renderHome();
+async function saveGerant(){
+  if(gzStaffBusy)return;
+  const nom=gzStaffName(document.getElementById('g-nom').value);
+  const id=gzStaffId(document.getElementById('g-id').value);
+  const password=document.getElementById('g-pass').value;
+  if(!nom||!gzStaffValidId(id))return showToast('⚠️ Nom obligatoire ; identifiant : 2 à 24 lettres minuscules, chiffres, - ou _.');
+  const old=(DB.get('gerants')||[]).find(x=>gzStaffId(x.id)===id);
+  const account=gzStaffRow(id);
+  if(!old && account)return showToast('⚠️ Cet identifiant existe déjà.');
+  if(!account && password.length<8)return showToast('⚠️ Choisissez un mot de passe de 8 caractères minimum pour activer ce gérant.');
+  if(password && password.length<8)return showToast('⚠️ Nouveau mot de passe : 8 caractères minimum.');
+  gzStaffBusy=true;
+  const saveBtn=document.querySelector('#mo-gerant .btn-ok');if(saveBtn)saveBtn.disabled=true;
+  try{
+    const dir='staff_login/'+GZ_STAFF_ROOM+'/'+id;
+    let freshUid=null, newEmail=null;
+    if(!account || password){
+      newEmail=gzNewStaffEmail(id);
+      freshUid=await gzProvisionAuth(newEmail,password);
+      // Un nouveau UID remplace l'ancien pour révoquer immédiatement l'ancien mot de passe.
+      const updates={};
+      if(account&&account.uid)updates['access/'+account.uid+'/rooms/'+GZ_STAFF_ROOM]=null;
+      updates['access/'+freshUid+'/rooms/'+GZ_STAFF_ROOM]='gerant';
+      updates[dir]=gzStaffRecord(freshUid,newEmail,nom,true);
+      await gzWriteStaffAccess(updates);
+    }else if(nom!==account.nom){
+      await firebase.database().ref(dir).update({nom:nom,updatedAt:firebase.database.ServerValue.TIMESTAMP});
+    }
+    await gzSaveLocalStaffProfile({id,nom});
+    gzStaffDirectory[id]=Object.assign({},gzStaffRow(id)||{}, {uid:freshUid||(account&&account.uid),email:newEmail||(account&&account.email),nom,enabled:freshUid?true:account&&account.enabled});
+    closeModal('mo-gerant');renderGerants();renderHome();
+    showToast(password?'✅ Compte et accès Gérant enregistrés':'✅ Nom du gérant modifié');
+  }catch(e){console.warn('Création / modification gérant :',e);showToast('⚠️ '+gzStaffError(e));}
+  finally{document.getElementById('g-pass').value='';gzStaffBusy=false;if(saveBtn)saveBtn.disabled=false;}
 }
-function delGerant(i){
-  if(!confirm('Supprimer ce gérant ?'))return;
-  const gerants=DB.get('gerants')||[];gerants.splice(i,1);DB.set('gerants',gerants);renderGerants();renderHome();showToast('Supprimé');
+async function gzToggleGerant(i){
+  if(gzStaffBusy)return;
+  const g=(DB.get('gerants')||[])[i];if(!g)return;
+  const id=gzStaffId(g.id),account=gzStaffRow(id);
+  if(!account||!account.uid)return showToast('⚠️ Ce gérant n’a pas encore de compte activé.');
+  const toEnabled=!account.enabled;
+  if(!confirm((toEnabled?'Réactiver ':'Bloquer ')+g.nom+' ?'))return;
+  gzStaffBusy=true;
+  try{
+    const updates={};
+    updates['access/'+account.uid+'/rooms/'+GZ_STAFF_ROOM]=toEnabled?'gerant':null;
+    updates['staff_login/'+GZ_STAFF_ROOM+'/'+id+'/enabled']=toEnabled;
+    updates['staff_login/'+GZ_STAFF_ROOM+'/'+id+'/updatedAt']=firebase.database.ServerValue.TIMESTAMP;
+    await gzWriteStaffAccess(updates);
+    gzStaffDirectory[id]=Object.assign({},account,{enabled:toEnabled});renderGerants();
+    showToast(toEnabled?'✅ Gérant réactivé':'🔒 Accès de '+g.nom+' révoqué');
+  }catch(e){showToast('⚠️ '+gzStaffError(e));}
+  finally{gzStaffBusy=false;}
+}
+async function delGerant(i){
+  if(gzStaffBusy)return;
+  const gerants=(DB.get('gerants')||[]).slice();const g=gerants[i];if(!g)return;
+  if(!confirm('SUPPRIMER '+g.nom+' ? Son accès Firebase sera immédiatement retiré. Ses rapports et recettes seront conservés.'))return;
+  gzStaffBusy=true;
+  try{
+    const id=gzStaffId(g.id),account=gzStaffRow(id);
+    if(account&&account.uid){
+      const updates={};
+      updates['access/'+account.uid+'/rooms/'+GZ_STAFF_ROOM]=null;
+      updates['staff_login/'+GZ_STAFF_ROOM+'/'+id]=null;
+      await gzWriteStaffAccess(updates);
+    }
+    gerants.splice(i,1);
+    await firebase.database().ref(GZ_STAFF_ROOM+'/gerants').set(gerants);
+    DB._cache.gerants=gerants;
+    delete gzStaffDirectory[id];renderGerants();renderHome();
+    showToast('🔒 Gérant supprimé et accès à la salle révoqué');
+  }catch(e){showToast('⚠️ '+gzStaffError(e));}
+  finally{gzStaffBusy=false;}
+}
+async function gzImportCp1(){
+  if(gzStaffBusy)return;
+  if(gzStaffRow('cp1'))return showToast('✅ CP1 possède déjà un contrôle d’accès individuel.');
+  if(!confirm('Associer le compte GÉRANT CP1 existant, sans modifier son mot de passe ni ses recettes ?'))return;
+  gzStaffBusy=true;
+  try{
+    const g=GZ_LEGACY_CP1;
+    const updates={};
+    updates['access/'+g.uid+'/rooms/'+GZ_STAFF_ROOM]='gerant';
+    updates['staff_login/'+GZ_STAFF_ROOM+'/cp1']=gzStaffRecord(g.uid,g.email,g.nom,true);
+    await gzWriteStaffAccess(updates);
+    gzStaffDirectory.cp1={uid:g.uid,email:g.email,nom:g.nom,enabled:true};
+    await gzSaveLocalStaffProfile(g);
+    renderGerants();showToast('✅ CP1 associé : son blocage est maintenant gérable depuis PATRON.');
+  }catch(e){showToast('⚠️ '+gzStaffError(e));}
+  finally{gzStaffBusy=false;}
 }
 
 // ══════════════════════════════════════
