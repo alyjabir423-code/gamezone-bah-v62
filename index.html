@@ -602,17 +602,23 @@ button,.ni,.ctl-btn{touch-action:manipulation}
     <div class="mt" id="mo-poste-title">Nouveau poste</div>
     <div class="ig"><label>Numéro / Nom du poste</label><input type="text" id="p-num" placeholder="Ex: P01"></div>
     <div class="ig"><label>Type de console</label>
-      <select id="p-type">
+      <select id="p-type" onchange="gzToggleCustomConsole()">
         <option value="PS5">PS5</option>
         <option value="PS4">PS4</option>
         <option value="PS3">PS3</option>
         <option value="Autres">Autres</option>
       </select>
     </div>
+    <div class="ig" id="p-custom-wrap" style="display:none">
+      <label>Nom de la console (Autres)</label>
+      <input id="p-custom-type" type="text" maxlength="40" placeholder="Ex : PS2, Xbox, décodeur Android" autocomplete="off">
+      <div style="font-size:10px;color:var(--muted)">Le nom apparaît chez le Patron et le Gérant. Les tarifs restent dans la catégorie « Autres ».</div>
+    </div>
 
     <div style="margin:16px 0 10px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">🔌 Prise Tuya Cloud</div>
     <div class="info-box">Seul le <b>Device ID</b> est enregistré pour le poste. Les clés Tuya restent protégées dans Cloudflare.</div>
     <div class="ig"><label>Device ID</label><input type="text" id="p-devid" placeholder="Depuis Tuya Developer" autocomplete="off"></div>
+    <div style="font-size:11px;color:#fbbf24;margin:6px 0 12px">🔌 Deux consoles peuvent partager le même Device ID. Débranchez toujours celle qui n'est pas utilisée ; une seule session sur cette prise sera autorisée.</div>
     <input type="hidden" id="p-ip" value="">
     <input type="hidden" id="p-key" value="">
     <input type="hidden" id="p-ver" value="3.3">
@@ -901,6 +907,37 @@ function rootReadActive(root,poste,idx){
   if(Number.isInteger(idx)&&idx>=0)legacy=arr[idx]||null;
   return mapped||legacy||{};
 }
+
+// PS5/PS2 : deux noms de poste peuvent partager UNE prise physique.
+// Vérification transactionnelle, y compris les séances mises en pause.
+function gzSharedPlugOccupant(root, poste, idx){
+  root=root||{};
+  const id=String(poste&&poste.devid||'').trim();
+  if(!id)return null;
+  const all=Array.isArray(root.postes)?root.postes:[];
+  for(let j=0;j<all.length;j++){
+    const other=all[j];
+    if(!other||j===idx||String(other.num||'')===String(poste.num||'')||String(other.devid||'').trim()!==id)continue;
+    const st=rootReadActive(root,other,j)||{};
+    if(st.actif||(st.starting&&Date.now()<Number(st.startingUntil||0))||(st.cleanup&&Date.now()<Number(st.cleanupUntil||0)))return other;
+  }
+  return null;
+}
+function gzSharedPlugPartners(poste){
+  const id=String(poste&&poste.devid||'').trim();
+  return id?(DB.get('postes')||[]).filter(x=>x&&String(x.num||'')!==String(poste.num||'')&&String(x.devid||'').trim()===id):[];
+}
+async function gzSafeToSwitchOffShared(poste){
+  if(!gzSharedPlugPartners(poste).length)return true;
+  if(!fbRoot)return false;
+  try{
+    const snap=await fbRoot.once('value');
+    const root=snap.val()||{};
+    const idx=(root.postes||[]).findIndex(x=>x&&x.num===poste.num);
+    return !gzSharedPlugOccupant(root,poste,idx);
+  }catch(e){console.warn('Prise partagée : contrôle OFF impossible',e);return false;}
+}
+
 function rootWriteActive(root,poste,idx,state){
   root=root||{};const arr=Array.isArray(root.active_postes)?root.active_postes.slice():[];
   const st=Object.assign({},state||{},{updatedAt:Number((state||{}).updatedAt)||Date.now()});
@@ -1051,6 +1088,7 @@ async function ownerVerifySwitch(poste,expected){
 
 async function ownerTuyaCommand(poste,turnOn){
   if(!poste||!poste.devid||!currentTenantKey)return false;
+  if(turnOn===false && !(await gzSafeToSwitchOffShared(poste))){console.warn('OFF bloqué : autre session sur la même prise');return false;}
   try{
     const user=firebase.auth().currentUser;
     if(!user) throw new Error('Session Firebase absente');
@@ -1135,7 +1173,7 @@ function renderControl(){
       ? `<button class="ctl-btn ctl-resume" onclick="ownerResume(${i})">▶ REPRENDRE</button><button class="ctl-btn ctl-plus" onclick="ownerOpenPlus(${i})">＋TPS</button><button class="ctl-btn ctl-cancel" onclick="ownerOpenCancel(${i})">ANNULER</button><button class="ctl-btn ctl-off" onclick="ownerPowerOff(${i})">⏻ OFF TV</button>`
       : `<button class="ctl-btn ctl-pause" onclick="ownerPause(${i})">⏸ PAUSE</button><button class="ctl-btn ctl-plus" onclick="ownerOpenPlus(${i})">＋TPS</button><button class="ctl-btn ctl-cancel" onclick="ownerOpenCancel(${i})">ANNULER</button><button class="ctl-btn ctl-off" onclick="ownerPowerOff(${i})">⏻ OFF TV</button>`;
     return `<div class="ctl-card ${cls}">
-      <div class="ctl-head"><div><div class="ctl-num">${esc(ownerSpeechPosteName(p.num))}</div><div class="ctl-type">${esc(p.type)}</div></div><span class="badge ${a.actif?'b-on':'b-off'}">${badge}</span></div>
+      <div class="ctl-head"><div><div class="ctl-num">${esc(ownerSpeechPosteName(p.num))}</div><div class="ctl-type">${esc(p.typeCustom||p.type)}</div></div><span class="badge ${a.actif?'b-on':'b-off'}">${badge}</span></div>
       <div class="ctl-timer-row"><div class="ctl-timer ${a.paused?'pause':(a.actif?'on':'free')}">${timer}</div>${a.actif?`<div class="ctl-money">${amount.toLocaleString('fr-FR')} F</div>`:''}</div>
       <div class="ctl-progress"><div class="ctl-progress-bar" style="width:${pct}%;background:${progressColor}"></div></div>
       <div class="ctl-client">${a.actif?esc(a.client||'Client'):'Disponible'}</div>
@@ -1386,7 +1424,7 @@ function ownerRenderReport(){
   if(byId('or-date'))byId('or-date').textContent=bd.toLocaleDateString('fr-FR',{day:'numeric',month:'long'});if(byId('or-rec'))byId('or-rec').textContent=money(ss.recettes).toLocaleString('fr-FR')+' FCFA';if(byId('or-active'))byId('or-active').textContent=active.length;if(byId('or-done'))byId('or-done').textContent=Math.max(0,Number(ss.count)||0);if(byId('or-plugs'))byId('or-plugs').textContent=plugs.length;
   [['or-day',rev.day],['or-yesterday',rev.yesterday],['or-week',rev.week],['or-month',rev.month],['or-total',rev.total]].forEach(([id,v])=>{if(byId(id))byId(id).textContent=money(v).toLocaleString('fr-FR')+' FCFA';});
   const pay=byId('or-payments');if(pay){const ent=Object.entries(ss.payStats||{});pay.innerHTML=ent.length?ent.map(([id,v])=>{const p=OWNER_PAYS.find(x=>x.id===id);return `<div class="owner-rrow"><span class="owner-rkey">${p?p.emoji+' '+p.lbl:id}</span><span class="owner-rval purple">${money(v).toLocaleString('fr-FR')} FCFA</span></div>`;}).join(''):'<div class="owner-rrow"><span class="owner-rkey">Aucune donnée</span></div>';}
-  const pp=byId('or-postes');if(pp)pp.innerHTML=postes.length?postes.map(p=>`<div class="owner-rrow" style="display:block"><div style="font-weight:700;margin-bottom:4px">${esc(p.num)} — ${esc(p.type)}</div><div style="font-size:10px;color:#7f8498">Jour : ${money(rev.perPoste.day[p.num]).toLocaleString('fr-FR')} F · Semaine : ${money(rev.perPoste.week[p.num]).toLocaleString('fr-FR')} F · Mois : ${money(rev.perPoste.month[p.num]).toLocaleString('fr-FR')} F · Total : ${money(rev.perPoste.total[p.num]).toLocaleString('fr-FR')} F</div></div>`).join(''):'<div class="owner-rrow"><span class="owner-rkey">Aucun poste</span></div>';
+  const pp=byId('or-postes');if(pp)pp.innerHTML=postes.length?postes.map(p=>`<div class="owner-rrow" style="display:block"><div style="font-weight:700;margin-bottom:4px">${esc(p.num)} — ${esc(p.typeCustom||p.type)}</div><div style="font-size:10px;color:#7f8498">Jour : ${money(rev.perPoste.day[p.num]).toLocaleString('fr-FR')} F · Semaine : ${money(rev.perPoste.week[p.num]).toLocaleString('fr-FR')} F · Mois : ${money(rev.perPoste.month[p.num]).toLocaleString('fr-FR')} F · Total : ${money(rev.perPoste.total[p.num]).toLocaleString('fr-FR')} F</div></div>`).join(''):'<div class="owner-rrow"><span class="owner-rkey">Aucun poste</span></div>';
   const cancels=(DB.get('annulations')||[]).filter(a=>a&&a.dateKey===businessDateKey(new Date())).sort((a,b)=>(Number(b.ts)||0)-(Number(a.ts)||0));if(byId('or-cancel-count'))byId('or-cancel-count').textContent=cancels.length+' annulation'+(cancels.length>1?'s':'');const cl=byId('or-cancels');if(cl)cl.innerHTML=cancels.length?cancels.map(a=>`<div class="owner-cancel-card"><div class="owner-cancel-head"><span class="owner-cancel-post">↩ ${esc(a.poste||'Poste')}</span><span class="owner-cancel-money">-${money(a.montantRetireJour!=null?a.montantRetireJour:a.montant).toLocaleString('fr-FR')} F</span></div><div class="owner-cancel-meta">${esc(a.client||'—')} · Annulé à ${esc(a.heure||ownerFmtClock(a.ts))} · Temps restant ${fmtRest(a.tempsRestantSec||0)}</div><div class="owner-cancel-reason">Motif : ${esc(a.raison||'Non indiqué')}</div><div class="owner-cancel-meta">Par : ${esc(a.gerant||'—')}</div></div>`).join(''):'<div class="owner-rrow"><span class="owner-rkey">Aucune annulation aujourd\'hui</span></div>';
 }
 async function ownerEnsureDailyRollover(){
@@ -1395,7 +1433,7 @@ async function ownerEnsureDailyRollover(){
 }
 
 
-function ownerOpenStart(i){const postes=DB.get('postes')||[];const p=postes[i];if(!p)return;const a=activeForPoste(p,i);if(a&&a.actif){showToast('⚠️ Poste déjà actif');return;}ownerPosteIdx=i;const ts=ownerTarifs(p);ownerSelMin=ts.length?Number(ts[0].min)||0:0;ownerSelPay='especes';document.getElementById('owner-start-title').textContent=p.num+' — Nouvelle session';document.getElementById('owner-client').value='';renderOwnerDurations('owner-start-durations',p,'start');renderOwnerPayments('owner-start-payments','start');openModal('mo-owner-start');}
+function ownerOpenStart(i){const postes=DB.get('postes')||[];const p=postes[i];if(!p)return;const occupant=gzSharedPlugOccupant(DB._cache||{},p,i);if(occupant){showToast('🔌 '+occupant.num+' utilise cette prise : terminez sa session avant de lancer '+p.num);return;}const a=activeForPoste(p,i);if(a&&a.actif){showToast('⚠️ Poste déjà actif');return;}ownerPosteIdx=i;const ts=ownerTarifs(p);ownerSelMin=ts.length?Number(ts[0].min)||0:0;ownerSelPay='especes';document.getElementById('owner-start-title').textContent=p.num+' — Nouvelle session';document.getElementById('owner-client').value='';renderOwnerDurations('owner-start-durations',p,'start');renderOwnerPayments('owner-start-payments','start');openModal('mo-owner-start');}
 function ownerOpenPlus(i){const postes=DB.get('postes')||[];const p=postes[i];if(!p)return;const a=activeForPoste(p,i);if(!a||!a.actif){showToast('⚠️ Poste non actif');return;}ownerPosteIdx=i;const ts=ownerTarifs(p);ownerPlusMin=ts.length?Number(ts[0].min)||0:0;ownerPlusPay='especes';document.getElementById('owner-plus-title').textContent=p.num+' — Ajouter du temps';renderOwnerDurations('owner-plus-durations',p,'plus');renderOwnerPayments('owner-plus-payments','plus');openModal('mo-owner-plus');}
 
 
@@ -1464,18 +1502,19 @@ async function ownerConfirmStart(){
     sid=p.num+'-'+Date.now()+'-pat-'+Math.random().toString(36).slice(2,6);
     const reservation=await fbRoot.transaction(root=>{
       root=root||{};const r=rootReadActive(root,p,idx)||{};
+      if(gzSharedPlugOccupant(root,p,idx))return undefined;
       if(r.actif||(r.starting&&Date.now()<Number(r.startingUntil||0))||(r.cleanup&&Date.now()<Number(r.cleanupUntil||0)))return undefined;
       rootWriteActive(root,p,idx,{actif:false,starting:true,startingUntil:Date.now()+45000,
         client:nom,sessionId:sid,finTs:0,paused:false,montantSession:0,updatedAt:Date.now()});
       return root;
     },undefined,false);
-    if(!reservation||!reservation.committed)return showToast('⚠️ Poste déjà occupé ou activation en cours');
+    if(!reservation||!reservation.committed)return showToast('⚠️ Poste occupé, activation en cours ou prise partagée déjà utilisée par une autre console.');
     reserved=true;showToast('⏳ Vérification prise '+p.num);
     powered=await ownerTuyaCommand(p,true);
     if(!powered)throw new Error('Prise Tuya non confirmée ON : temps non activé');
     const tx=await fbRoot.transaction(root=>{
       root=root||{};const r=rootReadActive(root,p,idx)||{};
-      if(!r.starting||r.sessionId!==sid||r.actif)return undefined;
+      if(!r.starting||r.sessionId!==sid||r.actif||gzSharedPlugOccupant(root,p,idx))return undefined;
       const now=Date.now();const state={actif:true,starting:false,startingUntil:0,client:nom,
         finTs:now+min*60000,tempsTotal:min*60,dureeMin:min,paused:false,pauseRemainingSec:0,
         montantSession:prix,montantJourSession:prix,paiementsSession:{[pay]:prix},
@@ -1952,7 +1991,7 @@ function renderHome(){
         const w=(rev.perPoste.week[p.num]||0).toLocaleString('fr-FR');
         const t=(rev.perPoste.total[p.num]||0).toLocaleString('fr-FR');
         return `<div class="hpr" style="flex-direction:column;align-items:stretch;gap:2px">
-          <div style="font-size:12px;font-weight:600">${p.num} — ${p.type}</div>
+          <div style="font-size:12px;font-weight:600">${p.num} — ${p.typeCustom||p.type}</div>
           <div style="font-size:10px;color:var(--muted)">Jour : ${d} F · Semaine : ${w} F · Total : ${t} F</div>
         </div>`;
       }).join('')
@@ -1970,7 +2009,7 @@ function renderHome(){
     return `<div class="hpr">
       <div class="prise-dot ${a.actif&&hasPrise?'pd-on':hasPrise?'pd-off':'pd-none'}"></div>
       <div style="font-family:var(--fd);font-size:16px;font-weight:700;color:var(--gold);min-width:36px">${p.num}</div>
-      <div style="flex:1"><div style="font-size:12px;font-weight:500">${p.type}</div>
+      <div style="flex:1"><div style="font-size:12px;font-weight:500">${p.typeCustom||p.type}</div>
       <div style="font-size:10px;color:var(--muted)">${hasPrise?'🔌 Prise liée':'⚠️ Sans prise'} · ${recPoste.toLocaleString('fr-FR')} FCFA aujourd'hui</div></div>
       ${a.actif?`<div style="text-align:right"><div style="font-family:var(--fd);font-size:16px;color:var(--green)">${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')}</div><div style="font-size:10px;color:var(--muted)">${a.client}</div></div>`
       :'<span class="badge b-off">LIBRE</span>'}
@@ -1989,8 +2028,8 @@ function renderPostes(){
       <div class="prise-dot ${p.devid?'pd-off':'pd-none'}"></div>
       <div style="font-family:var(--fd);font-size:17px;font-weight:700;color:var(--gold);min-width:36px">${p.num}</div>
       <div style="flex:1">
-        <div style="font-size:13px;font-weight:500">${p.type}</div>
-        <div style="font-size:10px;color:var(--muted)">${p.devid?'🔌 Cloud Tuya lié':'⚠️ Prise non configurée'}</div>
+        <div style="font-size:13px;font-weight:500">${p.typeCustom||p.type}</div>
+        <div style="font-size:10px;color:var(--muted)">${p.devid?(gzSharedPlugPartners(p).length?'🔌 Prise partagée avec '+esc(gzSharedPlugPartners(p).map(x=>x.num).join(', ')):'🔌 Cloud Tuya lié'):'⚠️ Prise non configurée'}</div>
       </div>
       <div style="display:flex;gap:6px">
         <button class="btn-edit" onclick="editPoste(${i})">✏️</button>
@@ -1999,6 +2038,10 @@ function renderPostes(){
     </div>`).join('');
 }
 
+function gzToggleCustomConsole(){
+  const isOther=document.getElementById('p-type').value==='Autres';
+  document.getElementById('p-custom-wrap').style.display=isOther?'block':'none';
+}
 function openModalPoste(idx=-1){
   document.getElementById('p-edit-idx').value=idx;
   document.getElementById('test-result').style.display='none';
@@ -2006,7 +2049,8 @@ function openModalPoste(idx=-1){
     const p=(DB.get('postes')||[])[idx];
     document.getElementById('mo-poste-title').textContent='Modifier le poste';
     document.getElementById('p-num').value=p.num||'';
-    document.getElementById('p-type').value=p.type||'';
+    document.getElementById('p-type').value=['PS5','PS4','PS3','Autres'].includes(p.type)?p.type:'Autres';
+    document.getElementById('p-custom-type').value=p.typeCustom||(p.type==='Autres'?'':(p.type&&!['PS5','PS4','PS3'].includes(p.type)?p.type:''));
     document.getElementById('p-ip').value=p.ip||'';
     document.getElementById('p-devid').value=p.devid||'';
     document.getElementById('p-key').value=p.key||'';
@@ -2015,7 +2059,10 @@ function openModalPoste(idx=-1){
     document.getElementById('mo-poste-title').textContent='Nouveau poste';
     ['p-num','p-type','p-ip','p-devid','p-key'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('p-ver').value='3.3';
+    document.getElementById('p-type').value='PS5';
+    document.getElementById('p-custom-type').value='';
   }
+  gzToggleCustomConsole();
   openModal('mo-poste');
   setTimeout(()=>document.getElementById('p-num').focus(),200);
 }
@@ -2024,13 +2071,18 @@ function editPoste(i){openModalPoste(i);}
 function savePoste(){
   const num=document.getElementById('p-num').value.trim();
   const type=document.getElementById('p-type').value.trim();
+  const typeCustom=type==='Autres'?document.getElementById('p-custom-type').value.trim():'';
   if(!num||!type){showToast('⚠️ Nom et type obligatoires');return;}
+  if(type==='Autres'&&!typeCustom){showToast('⚠️ Écrivez le nom de la console (ex : PS2)');return;}
   const postes=DB.get('postes')||[];
   const idx=parseInt(document.getElementById('p-edit-idx').value);
   const old=(idx>=0&&postes[idx])?postes[idx]:{};
+  if(postes.some((x,i)=>i!==idx&&String(x.num||'').trim().toLowerCase()===num.toLowerCase()))return showToast('⚠️ Ce nom de poste existe déjà. Choisissez un nom différent.');
+  const active=idx>=0?activeForPoste(old,idx):{};
+  if(active&&active.actif&&(old.num!==num||String(old.devid||'').trim()!==document.getElementById('p-devid').value.trim()))return showToast('⚠️ Terminez cette session avant de modifier son nom ou sa prise.');
   const obj={
     ...old,
-    num,type,
+    num,type,typeCustom,
     devid:document.getElementById('p-devid').value.trim(),
     ip:'',
     ver:'3.3'
