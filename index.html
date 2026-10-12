@@ -1157,44 +1157,47 @@ function ownerPersistActivity(main,detail,amount,meta={}){
 }
 
 
-// V21: une commande Tuya n'est validée que si switch_1 confirme le vrai état.
-// Diagnostic local uniquement : aucun jeton ou secret n'est affiche.
-let gzTuyaLastError='';
-function gzTuyaDiagnostic(http,data,phase){
-  const status=Number(http)||0;
-  const reason=String((data&&(data.error||data.message||data.msg||data.code))||'').slice(0,120);
-  if(status===401)return 'Firebase : authentification refusee (401)';
-  if(status===403)return 'Firebase/Worker : acces refuse (403), verifier les droits de la salle et de la prise';
-  if(status===400)return 'Configuration : commande ou prise invalide (400)';
-  if(status===404)return 'Worker : adresse ou route introuvable (404)';
-  if(status===429)return 'Service : trop de demandes (429)';
-  if(status>=500)return 'Worker/Tuya : erreur serveur '+status+(reason?' - '+reason:'');
-  if(!status)return 'Reseau : Worker inaccessible';
-  return (phase==='status'?'Statut Tuya':'Commande Tuya')+' : HTTP '+status+(reason?' - '+reason:'');
+
+// CP1 uniquement : correspondances Tuya vérifiées, jamais les prises ARABI.
+const GZ_CP1_TUYA_IDS=Object.freeze({1:'bf77859fcb75e26cf11f4o',2:'bfba8b667e37b21c5dxnqz',3:'bf3928e0c6b5baa56eobvv',4:'bf7b869fe5f118b73dauab',5:'bfe898207ecd75437dx5fw',6:'bf4f7b47b4f9ec2451fgex'});
+function gzCP1DeviceId(poste){
+  const stored=String((poste&&poste.devid)||'').trim();
+  if(String(currentTenantKey||'').toUpperCase()!=='GZ-07732')return stored;
+  const raw=String((poste&&(poste.num||poste.nom||poste.name))||'');
+  const match=raw.match(/(?:poste|post|p)\s*[-_#:]?\s*([1-6])(?:\D|$)/i) || raw.match(/^([1-6])$/);
+  const correct=match?GZ_CP1_TUYA_IDS[Number(match[1])]:null;
+  if(correct&&stored&&stored!==correct)console.warn('CP1 : association Tuya corrigée pour',raw);
+  return correct||stored;
 }
+let gzTuyaError='';
+function gzTuyaErrorText(){return gzTuyaError?' — '+gzTuyaError:'';}
+function gzTuyaReason(response,data,phase){
+  const msg=String((data&&(data.error||data.message||data.msg||data.detail))||'').slice(0,150);
+  return phase+' HTTP '+response.status+(msg?' : '+msg:'');
+}
+
+// V21: une commande Tuya n'est validée que si switch_1 confirme le vrai état.
 async function ownerReadSwitch(poste){
-  if(!poste||!poste.devid||!currentTenantKey)return null;
+  const devid=gzCP1DeviceId(poste);if(!devid||!currentTenantKey)return null;
   const user=firebase.auth().currentUser;if(!user)return null;
   const token=await user.getIdToken();
   const r=await fetch(TUYA_WORKER_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
-   body:JSON.stringify({tenantKey:currentTenantKey,action:'status',devid:poste.devid}),cache:'no-store'});
+   body:JSON.stringify({tenantKey:currentTenantKey,action:'status',devid}),cache:'no-store'});
   const d=await r.json().catch(()=>({}));
-  if(!r.ok||!d.success||!d.device){gzTuyaLastError=gzTuyaDiagnostic(r.status,d,'status');return null;}
-  if(d.device.online!==true){gzTuyaLastError='Tuya : prise hors ligne';return null;}
-  if(typeof d.device.switchOn!=='boolean'){gzTuyaLastError='Tuya : etat switch_1 absent';return null;}
-  return d.device.switchOn;
+  if(!r.ok||!d.success||!d.device){gzTuyaError=gzTuyaReason(r,d,'Statut');return null;}
+  return d.device.online===true&&typeof d.device.switchOn==='boolean'?d.device.switchOn:null;
 }
 async function ownerVerifySwitch(poste,expected){
-  for(let i=0;i<5;i++){
-    if(i)await new Promise(r=>setTimeout(r,550));
+  for(let i=0;i<8;i++){
+    if(i)await new Promise(r=>setTimeout(r,750));
     try{if(await ownerReadSwitch(poste)===expected)return true;}catch(e){console.log('Etat Tuya:',e);}
   }
   return false;
 }
 
 async function ownerTuyaCommand(poste,turnOn){
-  gzTuyaLastError='';
-  if(!poste||!poste.devid||!currentTenantKey){gzTuyaLastError='Configuration : prise ou salle manquante';return false;}
+  const devid=gzCP1DeviceId(poste);gzTuyaError='';
+  if(!devid||!currentTenantKey){gzTuyaError='ID de prise absent';return false;}
   if(turnOn===false && !(await gzSafeToSwitchOffShared(poste))){console.warn('OFF bloqué : autre session sur la même prise');return false;}
   try{
     const user=firebase.auth().currentUser;
@@ -1206,15 +1209,15 @@ async function ownerTuyaCommand(poste,turnOn){
         'Content-Type':'application/json',
         'Authorization':'Bearer '+idToken
       },
-      body:JSON.stringify({tenantKey:currentTenantKey,devid:poste.devid,turnOn})
+      body:JSON.stringify({tenantKey:currentTenantKey,devid,turnOn})
     });
     const d=await r.json();
-    if(!r.ok||!d.success){gzTuyaLastError=gzTuyaDiagnostic(r.status,d,'commande');console.warn(gzTuyaLastError);return false;}
+    if(!r.ok||!d.success){gzTuyaError=gzTuyaReason(r,d,'Commande');console.log('Tuya patron refusé:',d);return false;}
     const confirmed=await ownerVerifySwitch(poste,turnOn);
+    if(!confirmed&&!gzTuyaError)gzTuyaError="Commande acceptée, état ON/OFF non confirmé";
     if(confirmed&&turnOn)ownerClearOff(poste);
-    if(!confirmed&&!gzTuyaLastError)gzTuyaLastError='Tuya : commande acceptee mais etat ON/OFF non confirme';
     return confirmed;
-  }catch(e){gzTuyaLastError=String(e&&e.message||'').includes('Firebase')?'Firebase : session ou jeton absent':('Reseau/Worker : '+String(e&&e.name||'connexion impossible'));console.warn(gzTuyaLastError);return false;}
+  }catch(e){gzTuyaError=String(e&&e.message||e);console.log('Tuya patron:',e);return false;}
 }
 function ownerPendingKey(){return 'gz_patron_pending_off_'+String(currentTenantKey||'');}
 function ownerQueueOff(poste){return; // V46 : jamais de coupure électrique différée
@@ -1619,7 +1622,7 @@ async function ownerConfirmStart(){
     if(!reservation||!reservation.committed)return showToast('⚠️ Poste occupé, activation en cours ou prise partagée déjà utilisée par une autre console.');
     reserved=true;showToast('⏳ Vérification prise '+p.num);
     powered=await ownerTuyaCommand(p,true);
-    if(!powered)throw new Error((gzTuyaLastError||'Tuya : etat ON non confirme')+' - temps non active');
+    if(!powered)throw new Error('Prise Tuya non confirmée ON : temps non activé'+gzTuyaErrorText());
     const tx=await fbRoot.transaction(root=>{
       root=root||{};const r=rootReadActive(root,p,idx)||{};
       if(!r.starting||r.sessionId!==sid||r.actif||gzSharedPlugOccupant(root,p,idx))return undefined;
