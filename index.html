@@ -1179,13 +1179,12 @@ function gzTuyaReason(response,data,phase){
 // V21: une commande Tuya n'est validée que si switch_1 confirme le vrai état.
 async function ownerReadSwitch(poste){
   const devid=gzCP1DeviceId(poste);if(!devid||!currentTenantKey)return null;
-  const user=firebase.auth().currentUser;if(!user)return null;
-  const token=await user.getIdToken();
-  const r=await fetch(TUYA_WORKER_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+  const r=await fetch(TUYA_WORKER_URL,{method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({tenantKey:currentTenantKey,action:'status',devid}),cache:'no-store'});
   const d=await r.json().catch(()=>({}));
   if(!r.ok||!d.success||!d.device){gzTuyaError=gzTuyaReason(r,d,'Statut');return null;}
-  return d.device.online===true&&typeof d.device.switchOn==='boolean'?d.device.switchOn:null;
+  if(typeof d.device.switchOn==='boolean')return d.device.switchOn;
+  gzTuyaError='Statut Tuya reçu sans switch_1';return null;
 }
 async function ownerVerifySwitch(poste,expected){
   for(let i=0;i<8;i++){
