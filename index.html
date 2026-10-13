@@ -1845,6 +1845,7 @@ async function ownerFinishExpired(i,p,a){
     }catch(e){console.warn('OFF après clôture Patron:',e);}
     renderControl();renderHome();
     ownerSpeak('Temps terminé pour '+ownerSpeechPosteName(p.num)+'.');
+    ownerTextVoiceNotify('GameZone — Fin de session',ownerSpeechPosteName(p.num)+' : temps terminé, télévision éteinte.','');
     ownerPersistActivity(p.num+' — Temps écoulé',(a.client||'Client')+' · fin automatique',money(a.montantSession)+' F',{poste:p.num,client:a.client||'',sessionId:sid,typeActivite:'terminee_auto',tempsRestantSec:0,montant:money(a.montantSession)});
     try{await fbRoot.transaction(root=>{
       root=root||{};const live=rootReadActive(root,p,i)||{};
@@ -2924,6 +2925,8 @@ window.GymProofFree=(function(){
   setTimeout(upgradeBonusModal,200);
 
   function ensureStatusBannerP(){if(document.getElementById('gz-net-status-p'))return;const top=document.querySelector('.topbar');if(!top)return;const d=document.createElement('div');d.id='gz-net-status-p';d.className='gz-net-status';d.style.display='none';top.insertAdjacentElement('afterend',d);}function setStatusP(text,kind){ensureStatusBannerP();const d=document.getElementById('gz-net-status-p');if(!d)return;if(!text){d.style.display='none';return;}d.style.display='block';d.className='gz-net-status '+(kind||'info');d.textContent=text;}
+  async function ownerTextVoiceNotify(title,body,voice){try{showToast('🔔 '+body);}catch(_e){}try{if(voice)ownerSpeak(voice);}catch(_e){}try{if('Notification'in window&&Notification.permission==='granted'){const reg=await navigator.serviceWorker?.ready;if(reg)await reg.showNotification(title,{body,tag:'gzp-'+title+'-'+Date.now()});else new Notification(title,{body});}}catch(_e){}}
+
   async function fetchRoomStatusP(){const u=firebase.auth().currentUser;if(!u)throw new Error('Firebase absent');const token=await u.getIdToken();const r=await fetch(TUYA_WORKER_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({tenantKey:currentTenantKey,action:'roomStatus'})});const d=await r.json().catch(()=>({}));if(!r.ok||!d.success)throw new Error(d.error||'Statut Tuya indisponible');return d.devices||[];}
 
   // V21 : prise allumée hors séance, deux statuts ON puis verrou Firebase avant OFF.
@@ -2958,7 +2961,7 @@ window.GymProofFree=(function(){
     }
   }
 
-  async function ownerAutoPauseOnly(i,reason){const postes=DB.get('postes')||[],p=postes[i],a=activeForPoste(p,i)||{};if(!p||!a.actif||a.paused)return;const rest=remainingActive(a),sid=a.sessionId||'';try{const res=await fbRoot.transaction(root=>{root=root||{};const rr=rootReadActive(root,Object.assign({},p,a),i)||{};if(!rr.actif||rr.paused||(sid&&rr.sessionId&&rr.sessionId!==sid)||Number(rr.updatedAt||0)!==Number(a.updatedAt||0))return undefined;rootWriteActive(root,Object.assign({},p,a),i,Object.assign({},rr,{paused:true,pauseRemainingSec:rest,finTs:0,pauseReason:reason,updatedAt:Date.now()}));return root;},undefined,false);if(res&&res.committed)ownerPersistActivity(p.num+' — Pause automatique',(a.client||'Client')+' · '+reason+' · '+fmtRest(rest)+' protégées','',{poste:p.num,client:a.client||'',sessionId:sid,typeActivite:'pause_auto'});}catch(e){console.log(e);}}
+  async function ownerAutoPauseOnly(i,reason){const postes=DB.get('postes')||[],p=postes[i],a=activeForPoste(p,i)||{};if(!p||!a.actif||a.paused)return;const rest=remainingActive(a),sid=a.sessionId||'';try{const res=await fbRoot.transaction(root=>{root=root||{};const rr=rootReadActive(root,Object.assign({},p,a),i)||{};if(!rr.actif||rr.paused||(sid&&rr.sessionId&&rr.sessionId!==sid)||Number(rr.updatedAt||0)!==Number(a.updatedAt||0))return undefined;rootWriteActive(root,Object.assign({},p,a),i,Object.assign({},rr,{paused:true,pauseRemainingSec:rest,finTs:0,pauseReason:reason,updatedAt:Date.now()}));return root;},undefined,false);if(res&&res.committed){ownerPersistActivity(p.num+' — Pause automatique',(a.client||'Client')+' · '+reason+' · '+fmtRest(rest)+' protégées','',{poste:p.num,client:a.client||'',sessionId:sid,typeActivite:'pause_auto'});const m=ownerSpeechPosteName(p.num)+' mis en pause automatiquement : '+reason+'.';ownerTextVoiceNotify('GameZone — Pause automatique',m,m);}}catch(e){console.log(e);}}
   const gzOffHistoryP=Object.create(null);
   // V39/V16: confirmer une transition ON -> OFF, jamais un simple statut OFF périmé.
   // Le changement de séance ou une reprise réinitialise la preuve d'état ON.
@@ -2987,8 +2990,8 @@ window.GymProofFree=(function(){
       const offlineIds=new Set(offline.map(d=>d.devid));
       const postes=DB.get('postes')||[];
       const affected=postes.filter(p=>p&&p.devid&&offlineIds.has(p.devid));
-      if(affected.length>=2){setStatusP('⚡ Coupure générale probable — prises hors ligne ; courant / réseau à vérifier. Les temps restent actifs.','danger');}
-      else if(affected.length===1){setStatusP('⚠️ '+ownerSpeechPosteName(affected[0].num)+' hors ligne ; temps actif maintenu.','warn');}
+      if(affected.length>=2){setStatusP('⚡ Coupure générale détectée — mise en pause automatique des postes concernés.','danger');for(let j=0;j<postes.length;j++){if(postes[j]&&offlineIds.has(postes[j].devid))await ownerAutoPauseOnly(j,'prise hors ligne / coupure de courant');}}
+      else if(affected.length===1){setStatusP('⏸ '+ownerSpeechPosteName(affected[0].num)+' hors ligne — pause automatique.','warn');const j=postes.indexOf(affected[0]);if(j>=0)await ownerAutoPauseOnly(j,'prise débranchée ou hors ligne');}
       else if(offline.length){setStatusP('☁️ Tuya signale une prise hors ligne ; vérifier le réseau.','warn');}
       else setStatusP('', 'info');
       // Ne pas mettre tous les postes en pause depuis la simple présence de prises offline.
@@ -3000,8 +3003,8 @@ window.GymProofFree=(function(){
         if(!a.actif){delete gzOffHistoryP[p.devid];if(st.online===true&&st.switchOn===true)setStatusP('⚠️ '+p.num+' : prise ON sans session, vérifier manuellement.','warn');continue;}
         if(gzManualOffConfirmedP(rec,st,a,Date.now())){
           // Transaction Firebase sécurisée par session; les deux appareils ne doublent pas la pause.
-          setStatusP('⚠️ '+p.num+' : prise OFF détectée, temps conservé.','warn');
-          setStatusP('⏸ '+ownerSpeechPosteName(p.num)+' : arrêt manuel confirmé, temps protégé.','warn');
+          await ownerAutoPauseOnly(i,'prise éteinte manuellement');
+          setStatusP('⏸ '+ownerSpeechPosteName(p.num)+' : arrêt manuel confirmé, temps mis en pause.','warn');
         }
       }
     }catch(e){setStatusP('☁️ Tuya indisponible : minuteurs non interrompus.','warn');}
