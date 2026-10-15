@@ -1,5 +1,5 @@
 // Historique prive Patron / partage Gerant — version 27
-const CACHE='gamezone-v62-type-editor-safe-20261012-patron-v3-autopause1';
+const CACHE='gamezone-bah-v63-20261015-patron-serveur-push';
 const ASSETS=['./','./index.html','./manifest.webmanifest'];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting()));
@@ -27,7 +27,7 @@ self.addEventListener('push', event => {
   let payload={};
   try { payload=event.data ? event.data.json() : {}; } catch (_) { payload={body:event.data ? event.data.text() : ''}; }
   const title=String(payload.title||'GameZone Bah');
-  const options={body:String(payload.body||'Nouvel événement GameZone'),tag:String(payload.eventId||payload.tag||'gamezone-event'),renotify:false,requireInteraction:!!payload.important,data:{url:payload.url||'./'}};
+  const options={body:String(payload.body||'Nouvel événement GameZone'),tag:String(payload.eventId||payload.tag||'gamezone-event'),renotify:true,vibrate:[200,100,250],requireInteraction:!!payload.important,data:{url:payload.url||'./'}};
   event.waitUntil(self.registration.showNotification(title,options));
 });
 self.addEventListener('notificationclick', event => {

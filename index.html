@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="GZ Patron">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="manifest" href="./manifest.webmanifest">
-<title>GameZone Bah V62 — Patron</title>
+<title>GameZone Bah V63 — Patron</title>
 <style>
 /* Police système : la page Patron s'affiche même si Google Fonts est inaccessible. */
 :root{--bg:#0a0f1e;--surface:#0f1628;--card:#162040;--border:#1e2d52;--gold:#f59e0b;--gl:#fcd34d;--green:#10b981;--red:#ef4444;--blue:#6366f1;--purple:#8b5cf6;--text:#f0f4ff;--muted:#64748b;--sub:#94a3b8;--fd:'Rajdhani',sans-serif;--fb:'Inter',sans-serif;--r:14px;--rs:9px}
@@ -867,7 +867,7 @@ function gzCloudTimerSync(poste, attempt=0){
       finally{clearTimeout(timer);}
       if(!resp.ok)throw Error('Worker alarm HTTP '+resp.status);
       const result=await resp.json().catch(()=>null);
-      if(!result || result.success!==true)throw Error('Alarme serveur non confirmée');
+      if(!result || result.success!==true || result.scheduler!=='durable-object' || !Number.isFinite(Number(result.scheduledAt)) )throw Error('Alarme serveur absente — déployer Worker v63');
     }catch(e){
       console.warn('Minuterie serveur non synchronisée:',poste,e&&e.message);
       if(attempt<4)gzCloudTimerSync(poste,attempt+1);
@@ -1159,7 +1159,7 @@ function ownerPersistActivity(main,detail,amount,meta={}){
 
 
 // CP1 uniquement : correspondances Tuya vérifiées, jamais les prises ARABI.
-const GZ_CP1_TUYA_IDS=Object.freeze({1:'bfe898207ecd75437dx5fw',2:'bfba8b667e37b21c5dxnqz',3:'bf3928e0c6b5baa56eobvv',4:'bf77859fcb75e26cf11f4o',5:'bf7b869fe5f118b73dauab',6:'bf4f7b47b4f9ec2451fgex'});
+const GZ_CP1_TUYA_IDS=Object.freeze({1:'bf77859fcb75e26cf11f4o',2:'bfba8b667e37b21c5dxnqz',3:'bf3928e0c6b5baa56eobvv',4:'bf7b869fe5f118b73dauab',5:'bfe898207ecd75437dx5fw',6:'bf4f7b47b4f9ec2451fgex'});
 function gzCP1DeviceId(poste){
   const stored=String((poste&&poste.devid)||'').trim();
   if(String(currentTenantKey||'').toUpperCase()!=='GZ-07732')return stored;
@@ -1185,7 +1185,7 @@ async function ownerReadSwitch(poste){
    body:JSON.stringify({tenantKey:currentTenantKey,action:'status',devid}),cache:'no-store'});
   const d=await r.json().catch(()=>({}));
   if(!r.ok||!d.success||!d.device){gzTuyaError=gzTuyaReason(r,d,'Statut');return null;}
-  return d.device.online===true&&typeof d.device.switchOn==='boolean'?d.device.switchOn:null;
+  return d.device.online!==false && typeof d.device.switchOn==='boolean'?d.device.switchOn:null;
 }
 async function ownerVerifySwitch(poste,expected){
   for(let i=0;i<8;i++){
@@ -2990,9 +2990,9 @@ window.GymProofFree=(function(){
       const offlineIds=new Set(offline.map(d=>d.devid));
       const postes=DB.get('postes')||[];
       const affected=postes.filter(p=>p&&p.devid&&offlineIds.has(p.devid));
-      if(affected.length>=2){setStatusP('⚡ Coupure générale détectée — mise en pause automatique des postes concernés.','danger');for(let j=0;j<postes.length;j++){if(postes[j]&&offlineIds.has(postes[j].devid))await ownerAutoPauseOnly(j,'prise hors ligne / coupure de courant');}}
-      else if(affected.length===1){setStatusP('⏸ '+ownerSpeechPosteName(affected[0].num)+' hors ligne — pause automatique.','warn');const j=postes.indexOf(affected[0]);if(j>=0)await ownerAutoPauseOnly(j,'prise débranchée ou hors ligne');}
-      else if(offline.length){setStatusP('☁️ Tuya signale une prise hors ligne ; vérifier le réseau.','warn');}
+      if(affected.length>=2){setStatusP('☁️ Plusieurs prises hors ligne : panne réseau/Wi-Fi ou courant à vérifier. Ne prouve PAS une coupure générale. Temps inchangés.','warn');}
+      else if(affected.length===1){setStatusP('☁️ '+ownerSpeechPosteName(affected[0].num)+' hors ligne : Wi-Fi/courant à vérifier. Minuteur inchangé, pause manuelle possible.','warn');}
+      else if(offline.length){setStatusP('☁️ Tuya signale une prise hors ligne ; vérifier le réseau/courant.','warn');}
       else setStatusP('', 'info');
       // Ne pas mettre tous les postes en pause depuis la simple présence de prises offline.
       for(let i=0;i<postes.length;i++){
@@ -3131,6 +3131,64 @@ window.GymProofFree=(function(){
   ensureStatusBannerP();
 })();
 
+</script>
+
+<script>
+/* GameZone Bah v63 : abonnement Web Push par téléphone, UNIQUEMENT après clic.
+   Aucun faux message « notifications à distance activées » si le Worker n'est pas prêt. */
+(function(){
+  const WORKER_URL='https://gamezone-bah-nouvauxcp1.bahmamadou4234.workers.dev';
+  const ROLE='PATRON';
+  function keyBytes(base64){
+    const padded=base64.replace(/-/g,'+').replace(/_/g,'/');
+    const decoded=atob(padded+'='.repeat((4-padded.length%4)%4));
+    return Uint8Array.from(decoded,c=>c.charCodeAt(0));
+  }
+  async function firebaseLoginToken(){
+    if(ROLE==='GERANT'){
+      if(typeof ensureFirebaseToken!=='function')return null;
+      return await ensureFirebaseToken();
+    }
+    const current=window.firebase?.auth?.().currentUser;
+    return current?await current.getIdToken():null;
+  }
+  async function enableRealNotifications(button){
+    if(!window.isSecureContext||!('Notification'in window)||!('serviceWorker'in navigator)||!('PushManager'in window))
+      throw new Error('Utilise le site HTTPS, et sur iPhone installe GameZone sur l’écran d’accueil.');
+    // iPhone Safari exige le clic utilisateur DIRECT pour la demande d'autorisation.
+    const permission=await Notification.requestPermission();
+    if(permission!=='granted')throw new Error('Autorisation refusée par le téléphone.');
+    const token=await firebaseLoginToken();
+    if(!token)throw new Error('Connecte-toi à la salle GameZone avant d’activer les notifications.');
+    const keyReq=await fetch(WORKER_URL+'/?action=pushKey',{cache:'no-store'});
+    const keyData=await keyReq.json();
+    if(!keyData.success||!keyData.key)throw new Error('Le serveur de notifications n’est pas encore configuré.');
+    const reg=await navigator.serviceWorker.ready;
+    let sub=await reg.pushManager.getSubscription();
+    if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:keyBytes(keyData.key)});
+    const resp=await fetch(WORKER_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+      body:JSON.stringify({tenantKey:'GZ-07732',action:'subscribePush',subscription:sub.toJSON(),url:location.href.split(/[?#]/)[0],role:ROLE})});
+    const answer=await resp.json().catch(()=>({}));
+    if(!resp.ok||!answer.success||!answer.registered)throw new Error(answer.error||'Abonnement impossible : vérifier le Worker.');
+    await reg.showNotification('🎮 GameZone Bah — alertes activées',{body:'Ce téléphone recevra les alertes à 5 minutes et à la fin du temps, même en arrière-plan si le système le permet.',tag:'gz-push-ready'});
+    button.title='Notifications distantes activées';
+    button.textContent='🔔✓';
+  }
+  function bind(){
+    const button=document.getElementById('gz-notify-btn');
+    if(!button||button.dataset.realPush==='1')return;
+    button.dataset.realPush='1';
+    button.onclick=async()=>{
+      button.disabled=true;
+      try{await enableRealNotifications(button);}
+      catch(err){alert('🔔 '+(err.message||err));}
+      finally{button.disabled=false;}
+    };
+  }
+  window.addEventListener('load',bind);
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(bind,0));
+  else setTimeout(bind,0);
+})();
 </script>
 </body>
 </html>
