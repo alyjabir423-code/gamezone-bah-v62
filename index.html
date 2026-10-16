@@ -239,7 +239,7 @@ button,.ni,.ctl-btn{touch-action:manipulation}
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 
-<script src="./management.js"></script>
+<script src="./management.js"></script><script>window.GZ_CUSTOM_ROLE="PATRON";</script><script src="./custom-time.js"></script>
 <script>
 /* GAMEZONE VOIX HOMME : réglage local à chaque appareil, aucune écriture Firebase. */
 (function(){
@@ -325,7 +325,7 @@ button,.ni,.ctl-btn{touch-action:manipulation}
     b.title='Notifications autorisées sur ce téléphone';
    }catch(err){alert('Impossible d’activer les notifications : '+err.message);}
   };
-  const clock=bar.querySelector('.tclock');if(clock)bar.insertBefore(b,clock);else bar.appendChild(b);
+  const clock=bar.querySelector('.tclock');if(clock&&clock.parentElement)clock.parentElement.insertBefore(b,clock);else bar.appendChild(b);
  }
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',setup);else setup();
 })();
@@ -391,7 +391,7 @@ button,.ni,.ctl-btn{touch-action:manipulation}
       <span class="tbadge">Patron</span>
     </div>
     <div style="display:flex;align-items:center;gap:10px">
-      <div class="tclock" id="clock">00:00</div>
+      <button type="button" id="gz-notify-btn" onclick="alert('Chargement des notifications : attends la fin du chargement puis réessaie.')" title="Activer les notifications GameZone" aria-label="Activer les notifications GameZone" style="flex-shrink:0;background:#1e293b;color:white;border:1px solid #64748b;border-radius:8px;padding:7px;min-width:38px;cursor:pointer">🔔</button><div class="tclock" id="clock">00:00</div>
       <button class="btn-out" onclick="doLogout()">⏏</button>
     </div>
   </div>
@@ -551,7 +551,7 @@ button,.ni,.ctl-btn{touch-action:manipulation}
     <div class="mh"></div>
     <div class="mt" id="owner-start-title">Nouvelle session</div>
     <div class="ig"><label>Nom du client</label><input type="text" id="owner-client" placeholder="Ex: Koné Moussa" autocomplete="off"></div>
-    <div class="ig"><label>Durée</label><div class="dctl-grid" id="owner-start-durations"></div></div>
+    <div class="ig"><label>Durée</label><div class="dctl-grid" id="owner-start-durations"></div><div style="grid-column:1/-1;margin-top:10px"><label for="gz-custom-start">Durée personnalisée (minutes)</label><input id="gz-custom-start" type="number" min="1" max="1440" step="1" placeholder="Ex. 2, 3 ou 5" oninput="gzChooseCustom('start',this.value)" style="width:100%;box-sizing:border-box"><div id="gz-price-start" aria-live="polite" style="font-size:12px;margin-top:6px">Prix proportionnel, arrondi aux 10 F les plus proches (minimum 10 F).</div></div></div>
     <div class="ig"><label>Paiement</label><div class="pctl-grid" id="owner-start-payments"></div></div>
     <div class="ma"><button class="btn-cancel" onclick="closeModal('mo-owner-start')">Annuler</button><button class="btn-ok" onclick="ownerConfirmStart()">Activer ✓</button></div>
   </div>
@@ -562,7 +562,7 @@ button,.ni,.ctl-btn{touch-action:manipulation}
   <div class="ms">
     <div class="mh"></div>
     <div class="mt" id="owner-plus-title">Ajouter du temps</div>
-    <div class="ig"><label>Temps à ajouter</label><div class="dctl-grid" id="owner-plus-durations"></div></div>
+    <div class="ig"><label>Temps à ajouter</label><div class="dctl-grid" id="owner-plus-durations"></div><div style="grid-column:1/-1;margin-top:10px"><label for="gz-custom-plus">Durée personnalisée (minutes)</label><input id="gz-custom-plus" type="number" min="1" max="1440" step="1" placeholder="Ex. 2, 3 ou 5" oninput="gzChooseCustom('plus',this.value)" style="width:100%;box-sizing:border-box"><div id="gz-price-plus" aria-live="polite" style="font-size:12px;margin-top:6px">Prix proportionnel, arrondi aux 10 F les plus proches (minimum 10 F).</div></div></div>
     <div class="ig"><label>Paiement</label><div class="pctl-grid" id="owner-plus-payments"></div></div>
     <div class="ma"><button class="btn-cancel" onclick="closeModal('mo-owner-plus')">Annuler</button><button class="btn-ok" onclick="ownerConfirmPlus()">Ajouter le temps ✓</button></div>
   </div>
@@ -1113,7 +1113,7 @@ function ownerVoiceStartKey(sid){return 'gz_patron_voice_start_'+String(currentT
 function ownerVoiceFiveKey(sid,cycle){return 'gz_patron_voice_5_'+String(currentTenantKey||'')+'_'+String(sid||'')+'_'+String(Number(cycle)||0);}
 function ownerMarkExistingVoiceSessions(){const postes=DB.get('postes')||[];postes.forEach((p,i)=>{const a=activeForPoste(p,i)||{};if(a.actif&&a.sessionId)try{localStorage.setItem(ownerVoiceStartKey(a.sessionId),'1');}catch(e){}});}
 function ownerAnnounceStartOnce(sid,num,min,isBonus){if(!sid)return;const k=ownerVoiceStartKey(sid);try{if(localStorage.getItem(k)==='1')return;}catch(e){}const n=Math.max(1,Math.round(Number(min)||0));const ok=ownerSpeak((isBonus?'Bonus client fidèle. ':'')+ownerSpeechPosteName(num)+' est activé pour '+n+' minutes.');if(ok)try{localStorage.setItem(k,'1');}catch(e){}}
-function ownerAnnounceFiveOnce(p,a){if(!a||!a.sessionId)return;const k=ownerVoiceFiveKey(a.sessionId,a.bonusGrantedAt||0);try{if(localStorage.getItem(k)==='1')return;}catch(e){}const ok=ownerSpeak(ownerSpeechPosteName(p.num)+', il reste cinq minutes avant l’extinction de la télévision.');if(ok)try{localStorage.setItem(k,'1');}catch(e){}}
+function ownerAnnounceFiveOnce(p,a){if(!a||!a.sessionId)return;const k=ownerVoiceFiveKey(a.sessionId,a.bonusGrantedAt||0);try{if(localStorage.getItem(k)==='1')return;}catch(e){}const ok=ownerSpeak(GameZoneManagement.displayName(p)+', il reste '+Math.max(1,Math.ceil(remainingActive(a)/60))+' minutes avant l’extinction de la télévision.');if(ok)try{localStorage.setItem(k,'1');}catch(e){}}
 
 // V26 : journal de gestion du Patron séparé du journal partagé des séances.
 // Les actions privées ne sont pas copiées dans activity_daily et ne sont pas visibles par le Gérant.
@@ -1246,10 +1246,10 @@ function renderOwnerPayments(containerId,selectedVar){
 }
 function ownerChoosePay(containerId,kind,id,el){document.querySelectorAll('#'+containerId+' .pctl-opt').forEach(x=>x.classList.remove('sel'));el.classList.add('sel');if(kind==='start')ownerSelPay=id;else ownerPlusPay=id;}
 function renderOwnerDurations(containerId,post,kind){
-  const el=document.getElementById(containerId);if(!el)return;const arr=ownerTarifs(post);const selected=kind==='start'?ownerSelMin:ownerPlusMin;
+  const el=document.getElementById(containerId);if(!el)return;gzCustomReset(kind);const arr=ownerTarifs(post);const selected=kind==='start'?ownerSelMin:ownerPlusMin;
   el.innerHTML=arr.length?arr.map(t=>`<div class="dctl-opt ${Number(t.min)===Number(selected)?'sel':''}" onclick="ownerChooseDuration('${containerId}','${kind}',${Number(t.min)},this)"><div class="dctl-min">${esc(t.lbl||((t.min||0)+' min'))}</div><div class="dctl-price">${money(t.prix).toLocaleString('fr-FR')} F</div></div>`).join(''):'<div style="grid-column:1/-1;font-size:12px;color:var(--muted)">Aucun tarif configuré pour '+esc(post.type)+'</div>';
 }
-function ownerChooseDuration(containerId,kind,min,el){document.querySelectorAll('#'+containerId+' .dctl-opt').forEach(x=>x.classList.remove('sel'));el.classList.add('sel');if(kind==='start')ownerSelMin=min;else ownerPlusMin=min;}
+function ownerChooseDuration(containerId,kind,min,el){gzCustomReset(kind);document.querySelectorAll('#'+containerId+' .dctl-opt').forEach(x=>x.classList.remove('sel'));el.classList.add('sel');if(kind==='start')ownerSelMin=min;else ownerPlusMin=min;}
 
 function ownerPosteOrderValue(p,idx){const m=String((p&&p.num)||'').match(/\d+/);return m?Number(m[0]):1000+Number(idx||0);}
 function ownerOrderedPostesEntries(list){return (list||[]).map((p,i)=>({p,i})).sort((a,b)=>ownerPosteOrderValue(a.p,a.i)-ownerPosteOrderValue(b.p,b.i));}
@@ -1279,7 +1279,7 @@ function renderControl(){
     const rest=remainingActive(a),timer=a.actif?fmtRest(rest):'—:——',amount=money(a.montantSession),cls=a.paused?'paused':(a.actif?'active':'');
     const expired=a.actif&&rest===0&&((!a.paused&&Number(a.finTs)>0)||(a.paused&&Number(a.pauseRemainingSec)<=0));
     const progressColor=rest<=300?'#ef4444':rest<=600?'#facc15':'#22c55e';
-    const badge=expired?'FIN EN COURS':a.paused?'PAUSE':(a.actif?'EN JEU':'LIBRE');
+    const badge=expired?'FIN EN COURS':a.paused?'PAUSE':(a.actif?'EN FONCTION':'LIBRE');
     const total=Math.max(0,Number(a.tempsTotal)||0);const pct=a.actif&&total>0?Math.max(0,Math.min(100,(rest/total)*100)):0;
     // OFF TV est volontairement réservé à l'interface Patron.
     // Il termine la session à 00:00 SANS retirer le montant déjà encaissé.
@@ -1317,7 +1317,7 @@ function ownerRenderBonusCard(postes){
   const bonusRest=actifs.length?Math.min(...actifs.map(x=>ownerBonusLeftSeconds(x.a))):0;
   const bonusTone=actifs.length?gzProgressTone(bonusRest,actifs.every(x=>x.a.paused)):'';
   const bonusBar='<div class="gz-yellow-meta">⏱ BONUS GRATUIT RESTANT — '+(actifs.length?fmtRest(bonusLeft):'Aucun bonus actif')+'</div><div class="gz-yellow-progress"><div class="gz-yellow-fill '+bonusTone+'" style="width:'+bonusPct.toFixed(2)+'%"></div></div>';
-  return '<div class="ctl-card bonus-master"><div class="bonus-master-title">🎁 CASE 7 — BONUS CLIENT FIDÈLE</div><div class="bonus-master-note">Automatique dès 1 000 F. +TEMPS BONUS ajoute gratuitement des minutes (1 min possible). ANNULER SESSION annule la séance entière et peut retirer la recette : confirmation requise. OFF TV termine sans retirer la recette.</div>'+bonusBar+details+'<button class="bonus-owner-btn" onclick="ownerOpenBonus()">🎁 OFFRIR / AJOUTER UN BONUS</button></div>';
+  return '<div class="ctl-card bonus-master"><div class="bonus-master-title">🎁 CASE 7 — BONUS CLIENT FIDÈLE</div><div class="bonus-master-note">Automatique dès 1 000 F. +TEMPS BONUS ajoute gratuitement des minutes (1 min possible). ANNULER SESSION annule la séance entière et peut retirer la recette : confirmation requise. OFF TV termine sans retirer la recette.</div>'+bonusBar+details+gzOccupancyHtml((DB.get('postes')||[]).map((p,i)=>Object.assign({},p,activeForPoste(p,i)||{})))+'<button class="bonus-owner-btn" onclick="ownerOpenBonus()">🎁 OFFRIR / AJOUTER UN BONUS</button></div>';
 }
 function ownerOpenBonusFor(idx){
   ownerOpenBonus();
@@ -1567,7 +1567,7 @@ async function ownerConfirmStart(){
   try{
     const nom=document.getElementById('owner-client').value.trim();
     if(!nom)return showToast('⚠️ Entrez le nom du client');
-    const tar=ownerTarifs(p).find(t=>Number(t.min)===Number(ownerSelMin));
+    const tar=gzSelectedTariff('start',ownerTarifs(p),ownerSelMin);
     if(!tar)return showToast('⚠️ Choisissez une durée');
     const prix=money(tar.prix),min=Number(tar.min)||0,pay=ownerSelPay;
     if(!prix||!min)return showToast('⚠️ Tarif invalide');
@@ -1624,7 +1624,7 @@ async function ownerConfirmPlus(){
   const posts=DB.get('postes')||[],idx=ownerPosteIdx,p=posts[idx];
   if(!p)return showToast('⚠️ Poste introuvable');
   if(!navigator.onLine||!fbRoot)return showToast('⚠️ Internet ou Firebase indisponible');
-  const tariff=ownerTarifs(p).find(t=>Number(t.min)===Number(ownerPlusMin));
+  const tariff=gzSelectedTariff('plus',ownerTarifs(p),ownerPlusMin);
   if(!tariff)return showToast('⚠️ Durée non disponible');
   const prix=money(tariff.prix),mins=Number(tariff.min)||0,payKey=ownerPlusPay;
   if(prix<=0||mins<=0)return showToast('⚠️ Tarif incorrect');
@@ -2879,7 +2879,7 @@ window.GymProofFree=(function(){
 
   // V18 : supprimer la voix déclenchée par pointerdown AVANT toute validation.
   window.ownerSpeakNow=function(message){return ownerSpeak(message);};
-  window.ownerAnnounceFiveOnce=function(poste,actif){if(!actif||!actif.sessionId)return;const k=ownerVoiceFiveKey(actif.sessionId,actif.bonusGrantedAt||0);try{if(localStorage.getItem(k)==='1')return;}catch(_e){}if(ownerSpeak(ownerSpeechPosteName(poste.num)+', il reste cinq minutes avant l’extinction de la télévision.'))try{localStorage.setItem(k,'1');}catch(_e){}};
+  window.ownerAnnounceFiveOnce=function(poste,actif){if(!actif||!actif.sessionId)return;const k=ownerVoiceFiveKey(actif.sessionId,actif.bonusGrantedAt||0);try{if(localStorage.getItem(k)==='1')return;}catch(_e){}if(ownerSpeak(GameZoneManagement.displayName(poste)+', il reste '+Math.max(1,Math.ceil(remainingActive(actif)/60))+' minutes avant l’extinction de la télévision.'))try{localStorage.setItem(k,'1');}catch(_e){}};
   ['visibilitychange','pageshow','focus'].forEach(ev=>window.addEventListener(ev,()=>{try{if('speechSynthesis'in window)window.speechSynthesis.resume();}catch(_e){}}));
 
   // Bonus : 20, 30, 60 ou n'importe quelle durée personnalisée.
