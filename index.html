@@ -239,6 +239,7 @@ button,.ni,.ctl-btn{touch-action:manipulation}
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 
+<script src="./management.js"></script>
 <script>
 /* GAMEZONE VOIX HOMME : réglage local à chaque appareil, aucune écriture Firebase. */
 (function(){
@@ -460,8 +461,9 @@ button,.ni,.ctl-btn{touch-action:manipulation}
       <!-- PATRON UNIQUEMENT : corrections manuelles ; jamais affichees dans l’application Gerant. -->
       <div class="owner-report-card" id="patron-revenue-correction" style="padding:13px 14px;border:1px solid rgba(250,204,21,.42);margin-top:12px">
         <div style="font-size:14px;font-weight:700;color:#facc15">🔒 Correction de recette — Patron uniquement</div>
-        <div style="font-size:11px;color:var(--sub);line-height:1.6;margin:5px 0 12px">Uniquement pour les ventes du jour. Une correction ne crée ni faux client, ni nouvelle séance et ne touche pas aux prises. Motif obligatoire. Le journal privé est réservé au Patron.</div>
+        <div style="font-size:11px;color:var(--sub);line-height:1.6;margin:5px 0 12px">Choisis le jour actuel ou une journée précédente enregistrée. Une correction ne crée ni faux client, ni nouvelle séance et ne touche pas aux prises. Motif obligatoire. Le journal privé est réservé au Patron.</div>
         <div id="patron-corr-live-total" style="color:#4ade80;font-size:12px;margin-bottom:10px">Recette du jour : chargement Firebase…</div>
+        <div class="ig"><label for="patron-corr-date">Journée à corriger (journée de gestion dès 07h)</label><input type="date" id="patron-corr-date" onchange="patronPopulateRevenuePostes()"></div>
         <div class="ig"><label for="patron-corr-poste">Poste concerné</label><select id="patron-corr-poste" style="width:100%;padding:10px;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:9px"></select></div>
         <div class="ig"><label for="patron-corr-sens">Opération</label><select id="patron-corr-sens" style="width:100%;padding:10px;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:9px"><option value="add">+ Ajouter une vente réelle oubliée</option><option value="subtract">− Retirer un montant saisi par erreur</option></select></div>
         <div class="ig"><label for="patron-corr-amount">Montant en F CFA (multiple de 100)</label><input id="patron-corr-amount" type="number" inputmode="numeric" min="100" max="100000" step="100" placeholder="Ex. 200" style="width:100%;padding:10px;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:9px"/></div>
@@ -613,7 +615,8 @@ button,.ni,.ctl-btn{touch-action:manipulation}
   <div class="ms">
     <div class="mh"></div>
     <div class="mt" id="mo-poste-title">Nouveau poste</div>
-    <div class="ig"><label>Numéro / Nom du poste</label><input type="text" id="p-num" placeholder="Ex: P01"></div>
+    <div class="ig"><label>Nom affiché de votre choix</label><input type="text" id="p-display-name" maxlength="48" placeholder="Ex. Salon VIP"></div>
+    <div class="ig"><label>Identifiant du poste (conservé après création)</label><input type="text" id="p-num" placeholder="Ex: P01"></div>
     <div class="ig"><label>Type de console</label>
       <select id="p-type" onchange="gzToggleCustomConsole()">
         <option value="PS5">PS5</option>
@@ -1284,7 +1287,7 @@ function renderControl(){
       ? `<button class="ctl-btn ctl-resume" onclick="ownerResume(${i})">▶ REPRENDRE</button><button class="ctl-btn ctl-plus" onclick="ownerOpenPlus(${i})">＋TPS</button><button class="ctl-btn ctl-cancel" onclick="ownerOpenCancel(${i})">ANNULER</button><button class="ctl-btn ctl-off" onclick="ownerPowerOff(${i})">⏻ OFF TV</button>`
       : `<button class="ctl-btn ctl-pause" onclick="ownerPause(${i})">⏸ PAUSE</button><button class="ctl-btn ctl-plus" onclick="ownerOpenPlus(${i})">＋TPS</button><button class="ctl-btn ctl-cancel" onclick="ownerOpenCancel(${i})">ANNULER</button><button class="ctl-btn ctl-off" onclick="ownerPowerOff(${i})">⏻ OFF TV</button>`;
     return `<div class="ctl-card ${cls}">
-      <div class="ctl-head"><div><div class="ctl-num">${esc(ownerSpeechPosteName(p.num))}</div><div class="ctl-type">${esc(gzPosteTypeLabel(p))}</div></div><span class="badge ${a.actif?'b-on':'b-off'}">${badge}</span></div>
+      <div class="ctl-head"><div><div class="ctl-num">${esc(GameZoneManagement.displayName(p))}</div><div class="ctl-type">${esc(gzPosteTypeLabel(p))}</div></div><span class="badge ${a.actif?'b-on':'b-off'}">${badge}</span></div>
       <div class="ctl-timer-row"><div class="ctl-timer ${a.paused?'pause':(a.actif?'on':'free')}">${timer}</div>${a.actif?`<div class="ctl-money">${amount.toLocaleString('fr-FR')} F</div>`:''}</div>
       <div class="ctl-progress"><div class="ctl-progress-bar" style="width:${pct}%;background:${progressColor}"></div></div>
       <div class="ctl-client">${a.actif?esc(a.client||'Client'):'Disponible'}</div>
@@ -1302,7 +1305,7 @@ function ownerRenderBonusCard(postes){
   const details=actifs.length?actifs.map(x=>{
     const btn=x.a.paused?'▶ REPRENDRE':'⏸ PAUSE';
     const click=x.a.paused?'ownerResume':'ownerPause';
-    return '<div class="bonus-master-live"><b>'+esc(ownerSpeechPosteName(x.p.num))+'</b> · '+esc(x.a.client||'Client')+' · 🎁 BONUS +'+ownerOfferedMinutes(x.a)+' min gratuites · <strong>bonus restant '+fmtRest(ownerBonusLeftSeconds(x.a))+'</strong> · temps total poste '+fmtRest(remainingActive(x.a))+
+    return '<div class="bonus-master-live"><b>'+esc(GameZoneManagement.displayName(x.p))+'</b> · '+esc(x.a.client||'Client')+' · 🎁 BONUS +'+ownerOfferedMinutes(x.a)+' min gratuites · <strong>bonus restant '+fmtRest(ownerBonusLeftSeconds(x.a))+'</strong> · temps total poste '+fmtRest(remainingActive(x.a))+
       '<div class="gz-bonus-commands"><button class="ctl-btn ctl-pause" onclick="'+click+'('+x.i+')">'+btn+'</button>'+
       '<button class="ctl-btn ctl-plus" onclick="ownerOpenBonusFor('+x.i+')">＋TEMPS BONUS</button>'+
       '<button class="ctl-btn ctl-cancel" onclick="ownerOpenCancel('+x.i+')">ANNULER SESSION</button>'+
@@ -1324,7 +1327,7 @@ function ownerOpenBonusFor(idx){
 function ownerChooseBonusDuration(min,el){ownerBonusMin=Math.max(1,Number(min)||30);document.querySelectorAll('#owner-bonus-durations .dctl-opt').forEach(x=>x.classList.remove('sel'));if(el)el.classList.add('sel');const custom=document.getElementById('owner-bonus-custom');if(custom)custom.value='';ownerBonusPostChanged();}
 function ownerOpenBonus(){
   const postes=DB.get('postes')||[];if(!postes.length)return showToast('⚠️ Aucun poste configuré');ownerBonusMin=30;
-  const sel=document.getElementById('owner-bonus-poste');sel.innerHTML=ownerOrderedPostesEntries(postes).map(({p,i})=>{const a=activeForPoste(p,i)||{};return '<option value="'+i+'">'+esc(ownerSpeechPosteName(p.num))+' — '+(a.actif?('ACTIF · '+esc(a.client||'Client')):'LIBRE')+'</option>';}).join('');
+  const sel=document.getElementById('owner-bonus-poste');sel.innerHTML=ownerOrderedPostesEntries(postes).map(({p,i})=>{const a=activeForPoste(p,i)||{};return '<option value="'+i+'">'+esc(GameZoneManagement.displayName(p))+' — '+(a.actif?('ACTIF · '+esc(a.client||'Client')):'LIBRE')+'</option>';}).join('');
   document.getElementById('owner-bonus-client').value='';document.querySelectorAll('#owner-bonus-durations .dctl-opt').forEach((x,i)=>x.classList.toggle('sel',i===0));ownerBonusPostChanged();openModal('mo-owner-bonus');
 }
 function ownerBonusPostChanged(){
@@ -1394,7 +1397,7 @@ function ownerDayActivities(dayKey){
 function ownerRenderJournal(){
   const list=document.getElementById('owner-journal-list');if(!list)return;const postes=DB.get('postes')||[];const active=postes.map((p,i)=>({p,a:activeForPoste(p,i)||{}})).filter(x=>x.a.actif);const events=ownerDayActivities(businessDateKey(new Date()));
   if(!active.length&&!events.length){list.innerHTML='<div class="owner-je"><div class="owner-jdetail">Aucune activité pour cette journée.</div></div>';return;}
-  const ah=active.map(x=>{const a=x.a,p=x.p,rest=remainingActive(a),debut=a.startedAt?ownerFmtClock(a.startedAt):'—',fin=a.paused?'EN PAUSE':(a.finTs?ownerFmtClock(a.finTs):'—');return `<div class="owner-je ${a.paused?'owner-jpause':'owner-jactive'}"><span class="owner-jtime">${new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span><span class="owner-jdot ${a.paused?'y':'g'}"></span><div class="owner-jbody"><div class="owner-jmain">${esc(p.num)} — ${a.paused?'PAUSE':'ACTIF'}</div><div class="owner-jdetail">${esc(a.client||'—')} · Début ${debut} · Fin prévue ${fin} · Temps activé ${fmtRest(Number(a.tempsTotal)||0)}</div><div class="owner-jlive">Temps restant : ${fmtRest(rest)}</div></div><span class="owner-jamount">${money(a.montantSession).toLocaleString('fr-FR')} F</span></div>`;}).join('');
+  const ah=active.map(x=>{const a=x.a,p=x.p,rest=remainingActive(a),debut=a.startedAt?ownerFmtClock(a.startedAt):'—',fin=a.paused?'EN PAUSE':(a.finTs?ownerFmtClock(a.finTs):'—');return `<div class="owner-je ${a.paused?'owner-jpause':'owner-jactive'}"><span class="owner-jtime">${new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span><span class="owner-jdot ${a.paused?'y':'g'}"></span><div class="owner-jbody"><div class="owner-jmain">${esc(GameZoneManagement.displayName(p))} — ${a.paused?'PAUSE':'ACTIF'}</div><div class="owner-jdetail">${esc(a.client||'—')} · Début ${debut} · Fin prévue ${fin} · Temps activé ${fmtRest(Number(a.tempsTotal)||0)}</div><div class="owner-jlive">Temps restant : ${fmtRest(rest)}</div></div><span class="owner-jamount">${money(a.montantSession).toLocaleString('fr-FR')} F</span></div>`;}).join('');
   const eh=events.slice(0,80).map(e=>`<div class="owner-je"><span class="owner-jtime">${esc(e.t||ownerFmtClock(e.ts).slice(0,5))}</span><span class="owner-jdot ${esc(e.color||'p')}"></span><div class="owner-jbody"><div class="owner-jmain">${esc(e.main||'Activité')}</div>${e.detail?`<div class="owner-jdetail">${esc(e.detail)}</div>`:''}${e.motif?`<div class="owner-jmotif">Motif : ${esc(e.motif)}</div>`:''}${GymProofFree.eventHtml(e)}</div>${e.amount?`<span class="owner-jamount">${esc(e.amount)}</span>`:''}</div>`).join('');list.innerHTML=ah+eh;
 }
 async function ownerPauseAllForPowerOutage(){
@@ -1421,22 +1424,46 @@ let patronAuditActiveRoom='',patronAuditRef=null,patronAuditEvents={};
 function patronAuditRoom(){return 'gz_'+String(currentTenantKey||'');}
 function patronMoneySigned(n){return (n>=0?'+':'−')+Math.abs(n).toLocaleString('fr-FR')+' F';}
 function patronCorrectionStatus(msg){const el=document.getElementById('patron-corr-result');if(el)el.textContent=msg;}
+function patronSelectedCorrectionDay(){const el=document.getElementById('patron-corr-date');return el&&el.value||businessDateKey(new Date());}
 function patronPopulateRevenuePostes(){
-  const s=document.getElementById('patron-corr-poste');if(!s)return;
-  const old=s.value;
-  const postes=(DB.get('postes')||[]).filter(p=>p&&/^Poste\s*[1-6]$/i.test(String(p.num||'')));
-  s.innerHTML=postes.map(p=>'<option value="'+esc(p.num)+'">'+esc(p.num)+'</option>').join('');
-  if(postes.some(p=>p.num===old))s.value=old;
+ const select=document.getElementById('patron-corr-poste');if(!select)return;
+ const dateEl=document.getElementById('patron-corr-date'),current=businessDateKey(new Date());
+ if(dateEl){dateEl.max=current;if(!dateEl.value)dateEl.value=current;}
+ const key=patronSelectedCorrectionDay(),root=DB._cache||{},day=key===current?(root.sessions||{}):((root.daily||{})[key]||{});
+ const posts=DB.get('postes')||[],keys=[...new Set([...posts.map(p=>p.num),...Object.keys(day.parPoste||{})])],old=select.value;
+ select.innerHTML=keys.map(k=>{const p=posts.find(p=>p.num===k);return '<option value="'+esc(k)+'">'+esc(p?GameZoneManagement.displayName(p):k)+'</option>';}).join('');
+ if(keys.includes(old))select.value=old;
 }
-function patronCorrectionDaySnapshot(root){
-  const ss=root&&root.sessions||{};
-  const todayKey=businessDateKey(new Date());
-  if(ss.date!==today())throw new Error('Journée clôturée / en cours de basculement. Aucune correction.');
-  const day=root.daily&&root.daily[todayKey];
-  if(!day || money(day.recettes)!==money(ss.recettes))throw new Error('Écart entre rapport journalier et session : correction bloquée.');
-  const pp=ss.parPoste||{}, sum=Object.values(pp).reduce((n,v)=>n+money(v),0);
-  if(sum!==money(ss.recettes))throw new Error('Recettes déjà incohérentes : total et postes différents. Vérifie le rapport.');
-  return {ss: ss, day:day, dayKey:todayKey};
+function patronCorrectionDaySnapshot(root){return GameZoneManagement.snapshot(root,patronSelectedCorrectionDay(),businessDateKey(new Date()),today());}
+async function patronCorrectRevenue(){
+ if(patronCorrectionBusy)return;
+ const uid=firebase.auth().currentUser&&firebase.auth().currentUser.uid;
+ if(!loggedIn||!uid||!fbRoot||currentTenantKey!==ROOM_KEY)return patronCorrectionStatus('Connecte-toi en Patron à CP1');
+ const key=patronSelectedCorrectionDay(),poste=document.getElementById('patron-corr-poste').value;
+ const how=document.getElementById('patron-corr-sens').value,amount=Number(document.getElementById('patron-corr-amount').value);
+ const reason=String(document.getElementById('patron-corr-reason').value||'').trim();
+ if(!poste||!['add','subtract'].includes(how)||!Number.isSafeInteger(amount)||amount<100||amount>100000||amount%100||reason.length<8)return patronCorrectionStatus('Choisis le poste, un montant multiple de 100 F et un motif de 8 caractères minimum');
+ const btn=document.getElementById('patron-corr-confirm');patronCorrectionBusy=true;btn.disabled=true;
+ try{
+  if((await firebase.database().ref('.info/connected').once('value')).val()!==true)throw Error('Connexion Firebase absente');
+  if((await firebase.database().ref('access/'+uid+'/rooms/'+patronAuditRoom()).once('value')).val()!=='patron')throw Error('Accès Patron requis');
+  const raw=firebase.database().ref(patronAuditRoom()),room=(await raw.once('value')).val()||{};
+  const current=businessDateKey(new Date()),day=GameZoneManagement.snapshot(room,key,current,today());
+  const op={id:'C'+Date.now()+'_'+Math.random().toString(36).slice(2,10),key,poste,reason,delta:how==='add'?amount:-amount,beforeTotal:Number(day.ss.recettes)||0,beforePoste:Number((day.ss.parPoste||{})[poste])||0};
+  GameZoneManagement.applyCorrection(room,op,current,today());
+  if(Object.values(patronAuditEvents||{}).some(e=>e&&e.dateKey===key&&e.poste===poste&&Number(e.delta)===op.delta&&Date.now()-Number(e.creeLe||0)<120000))throw Error('Correction similaire récente : vérifie le journal privé');
+  if(!confirm('CORRECTION PATRON — '+key+'\n'+GameZoneManagement.displayName((room.postes||[]).find(p=>p.num===poste)||{num:poste})+'\n'+patronMoneySigned(op.delta)+'\nTotal : '+op.beforeTotal+' F → '+(op.beforeTotal+op.delta)+' F\nMotif : '+reason+'\nConfirmer ?'))return;
+  const audit={id:op.id,uid,poste,dateKey:key,creeLe:Date.now(),delta:op.delta,montant:amount,motif:reason,sens:how,avantPoste:op.beforePoste,apresPoste:op.beforePoste+op.delta,avantTotal:op.beforeTotal,apresTotal:op.beforeTotal+op.delta};
+  const auditRef=firebase.database().ref(patronAuditPrefix+patronAuditRoom()+'/'+op.id);await auditRef.set(audit);
+  let issue='';
+  const tx=await raw.transaction(data=>{try{return GameZoneManagement.applyCorrection(data,op,businessDateKey(new Date()),today());}catch(e){issue=e.message;return undefined;}},undefined,false);
+  if(!tx.committed)throw Error(issue||'Correction non appliquée');
+  DB._cache=tx.snapshot.val()||DB._cache;
+  patronCorrectionStatus('✅ Correction du '+key+' appliquée : '+patronMoneySigned(op.delta));
+  document.getElementById('patron-corr-amount').value='';document.getElementById('patron-corr-reason').value='';
+  patronRenderPrivateAudit();ownerRenderReport();renderHome();
+ }catch(e){patronCorrectionStatus('⚠️ '+(e.message||e));}
+ finally{patronCorrectionBusy=false;btn.disabled=false;}
 }
 function patronPrivateAuditEntries(){return Object.entries(patronAuditEvents||{}).filter(([id,item])=>item&&typeof item==='object').sort((a,b)=>Number(b[1].creeLe||0)-Number(a[1].creeLe||0));}
 function patronRenderPrivateAudit(){
@@ -1464,70 +1491,6 @@ function patronConnectPrivateAudit(){
     if(el)el.textContent='⚠️ Journal privé indisponible : publie d’abord les nouvelles règles Firebase.';
   });
 }
-async function patronCorrectRevenue(){
-  const btn=document.getElementById('patron-corr-confirm');
-  if(patronCorrectionBusy)return;
-  const s=document.getElementById('patron-corr-poste'),mode=document.getElementById('patron-corr-sens');
-  const amountEl=document.getElementById('patron-corr-amount'),reasonEl=document.getElementById('patron-corr-reason');
-  const poste=s&&s.value,how=mode&&mode.value,amount=Number(amountEl&&amountEl.value),reason=String(reasonEl&&reasonEl.value||'').trim();
-  if(!loggedIn||!fbRoot||!firebase.auth().currentUser||currentTenantKey!==ROOM_KEY)return patronCorrectionStatus('Connecte-toi en Patron à la salle CP1 Gaming.');
-  if(!/^Poste\s*[1-6]$/i.test(poste||'')||(DB.get('postes')||[]).every(p=>p.num!==poste))return patronCorrectionStatus('Choisis un poste TV existant.');
-  if(!['add','subtract'].includes(how)||!Number.isSafeInteger(amount)||amount<100||amount>100000||amount%100!==0)return patronCorrectionStatus('Montant invalide : entre 100 F et 100 000 F, par 100 F.');
-  if(reason.length<8)return patronCorrectionStatus('Indique un motif précis de 8 caractères minimum.');
-  const uid=firebase.auth().currentUser.uid,delta=how==='add'?amount:-amount;
-  patronCorrectionBusy=true;if(btn)btn.disabled=true;
-  try{
-    // Refuse tout règlement hors ligne. La lecture est refaite juste avant la transaction.
-    const conn=await firebase.database().ref('.info/connected').once('value');
-    if(conn.val()!==true)throw new Error('Internet ou Firebase indisponible : aucun montant modifié.');
-    const role=await firebase.database().ref('access/'+uid+'/rooms/'+patronAuditRoom()).once('value');
-    if(role.val()!=='patron')throw new Error('Compte non autorisé.');
-    const read=await fbRoot.once('value');const root=read.val()||{};
-    const day=patronCorrectionDaySnapshot(root);
-    const beforeP=money(day.ss.parPoste&&day.ss.parPoste[poste]);const beforeT=money(day.ss.recettes);
-    if(beforeP+delta<0||beforeT+delta<0)throw new Error('Montant insuffisant pour retirer '+amount+' F de '+poste+'.');
-    const idem=Object.values(patronAuditEvents||{}).some(e=>e&&e.dateKey===day.dayKey&&e.poste===poste&&Number(e.delta)===delta&&Date.now()-Number(e.creeLe||0)<120000);
-    if(idem)throw new Error('Une correction identique a déjà été demandée récemment : vérifie le journal privé avant de recommencer.');
-    const msg='CONFIRMATION PATRON — '+poste+'\n'+patronMoneySigned(delta)+'\nMontant du poste : '+beforeP+' F → '+(beforeP+delta)+' F\nTotal salle : '+beforeT+' F → '+(beforeT+delta)+' F\nMotif : '+reason+'\nAucune séance ni prise ne sera modifiée. Continuer ?';
-    if(!confirm(msg)){patronCorrectionStatus('Annulée. Aucune recette modifiée.');return;}
-    // Une clé d'opération unique : audit privé créé AVANT la transaction.
-    // Si la transaction échoue, l'audit reste Non confirmée sans fausser la recette.
-    const id='C'+Date.now()+'_'+Math.random().toString(36).slice(2,10);
-    const audit={id,uid,poste,dateKey:day.dayKey,creeLe:Date.now(),delta,montant:amount,motif:reason,sens:how,
-      avantPoste:beforeP,apresPoste:beforeP+delta,avantTotal:beforeT,apresTotal:beforeT+delta};
-    await firebase.database().ref(patronAuditPrefix+patronAuditRoom()+'/'+id).set(audit);
-    patronCorrectionStatus('Journal privé enregistré. Vérification et transaction du montant en cours…');
-    let issue='';
-    const tx=await fbRoot.transaction(function(data){
-      try{
-        if(!data||typeof data!=='object')throw new Error('Salle introuvable');
-        if((data.patron_adjustment_once||{})[id])throw new Error('Correction déjà appliquée');
-        const fresh=patronCorrectionDaySnapshot(data);
-        const p=fresh.ss.parPoste||{};
-        if(fresh.dayKey!==day.dayKey||money(fresh.ss.recettes)!==beforeT||money(p[poste])!==beforeP)
-          throw new Error('Une vente a changé depuis la vérification. Correction refusée, recharge le rapport.');
-        if(money(p[poste])+delta<0||money(fresh.ss.recettes)+delta<0)throw new Error('Recette insuffisante.');
-        const updated=deepClone(fresh.ss);
-        updated.parPoste=Object.assign({},updated.parPoste||{});
-        updated.parPoste[poste]=money(p[poste])+delta;
-        updated.recettes=money(updated.recettes)+delta;
-        const archive=Object.assign({},data.daily[fresh.dayKey]||{},deepClone(updated));
-        data.sessions=updated;
-        data.daily=data.daily||{};data.daily[fresh.dayKey]=archive;
-        data.patron_adjustment_once=data.patron_adjustment_once||{};data.patron_adjustment_once[id]=true;
-        // AUCUNE entree dans activity_daily ni journal partagé du Gérant.
-        return data;
-      }catch(e){issue=e.message||'Vérification refusée';return undefined;}
-    },undefined,false);
-    if(!tx||!tx.committed)throw new Error(issue||'Transaction non confirmée. Aucun montant ajouté. Journal privé marqué non confirmé.');
-    if(tx.snapshot&&tx.snapshot.val)DB._cache=tx.snapshot.val()||DB._cache;
-    patronCorrectionStatus('✅ '+poste+' : '+patronMoneySigned(delta)+'. Recette TV : '+(beforeT+delta).toLocaleString('fr-FR')+' F. Synchronisation avec le Gérant.');
-    amountEl.value='';reasonEl.value='';
-    patronRenderPrivateAudit();ownerRenderReport();renderHome();
-  }catch(e){patronCorrectionStatus('⚠️ '+(e.message||String(e)));console.warn('Correction privée :',e);}
-  finally{patronCorrectionBusy=false;if(btn)btn.disabled=false;}
-}
-
 function ownerRenderReport(){
   patronPopulateRevenuePostes();patronConnectPrivateAudit();patronRenderPrivateAudit();
   {const el=document.getElementById('patron-corr-live-total');const snap=DB.get('sessions')||{};if(el)el.textContent='Recette du jour lue dans Firebase : '+(snap.date===today()?money(snap.recettes).toLocaleString('fr-FR'):'0')+' F. Aucune régularisation automatique.';}
@@ -1535,7 +1498,7 @@ function ownerRenderReport(){
   if(byId('or-date'))byId('or-date').textContent=bd.toLocaleDateString('fr-FR',{day:'numeric',month:'long'});if(byId('or-rec'))byId('or-rec').textContent=money(ss.recettes).toLocaleString('fr-FR')+' FCFA';if(byId('or-active'))byId('or-active').textContent=active.length;if(byId('or-done'))byId('or-done').textContent=Math.max(0,Number(ss.count)||0);if(byId('or-plugs'))byId('or-plugs').textContent=plugs.length;
   [['or-day',rev.day],['or-yesterday',rev.yesterday],['or-week',rev.week],['or-month',rev.month],['or-total',rev.total]].forEach(([id,v])=>{if(byId(id))byId(id).textContent=money(v).toLocaleString('fr-FR')+' FCFA';});
   const pay=byId('or-payments');if(pay){const ent=Object.entries(ss.payStats||{});pay.innerHTML=ent.length?ent.map(([id,v])=>{const p=OWNER_PAYS.find(x=>x.id===id);return `<div class="owner-rrow"><span class="owner-rkey">${p?p.emoji+' '+p.lbl:id}</span><span class="owner-rval purple">${money(v).toLocaleString('fr-FR')} FCFA</span></div>`;}).join(''):'<div class="owner-rrow"><span class="owner-rkey">Aucune donnée</span></div>';}
-  const pp=byId('or-postes');if(pp)pp.innerHTML=postes.length?postes.map(p=>`<div class="owner-rrow" style="display:block"><div style="font-weight:700;margin-bottom:4px">${esc(p.num)} — ${esc(gzPosteTypeLabel(p))}</div><div style="font-size:10px;color:#7f8498">Jour : ${money(rev.perPoste.day[p.num]).toLocaleString('fr-FR')} F · Semaine : ${money(rev.perPoste.week[p.num]).toLocaleString('fr-FR')} F · Mois : ${money(rev.perPoste.month[p.num]).toLocaleString('fr-FR')} F · Total : ${money(rev.perPoste.total[p.num]).toLocaleString('fr-FR')} F</div></div>`).join(''):'<div class="owner-rrow"><span class="owner-rkey">Aucun poste</span></div>';
+  const pp=byId('or-postes');if(pp)pp.innerHTML=postes.length?postes.map(p=>`<div class="owner-rrow" style="display:block"><div style="font-weight:700;margin-bottom:4px">${esc(GameZoneManagement.displayName(p))} — ${esc(gzPosteTypeLabel(p))}</div><div style="font-size:10px;color:#7f8498">Jour : ${money(rev.perPoste.day[p.num]).toLocaleString('fr-FR')} F · Semaine : ${money(rev.perPoste.week[p.num]).toLocaleString('fr-FR')} F · Mois : ${money(rev.perPoste.month[p.num]).toLocaleString('fr-FR')} F · Total : ${money(rev.perPoste.total[p.num]).toLocaleString('fr-FR')} F</div></div>`).join(''):'<div class="owner-rrow"><span class="owner-rkey">Aucun poste</span></div>';
   const cancels=(DB.get('annulations')||[]).filter(a=>a&&a.dateKey===businessDateKey(new Date())).sort((a,b)=>(Number(b.ts)||0)-(Number(a.ts)||0));if(byId('or-cancel-count'))byId('or-cancel-count').textContent=cancels.length+' annulation'+(cancels.length>1?'s':'');const cl=byId('or-cancels');if(cl)cl.innerHTML=cancels.length?cancels.map(a=>`<div class="owner-cancel-card"><div class="owner-cancel-head"><span class="owner-cancel-post">↩ ${esc(a.poste||'Poste')}</span><span class="owner-cancel-money">-${money(a.montantRetireJour!=null?a.montantRetireJour:a.montant).toLocaleString('fr-FR')} F</span></div><div class="owner-cancel-meta">${esc(a.client||'—')} · Annulé à ${esc(a.heure||ownerFmtClock(a.ts))} · Temps restant ${fmtRest(a.tempsRestantSec||0)}</div><div class="owner-cancel-reason">Motif : ${esc(a.raison||'Non indiqué')}</div><div class="owner-cancel-meta">Par : ${esc(a.gerant||'—')}</div></div>`).join(''):'<div class="owner-rrow"><span class="owner-rkey">Aucune annulation aujourd\'hui</span></div>';
 }
 async function ownerEnsureDailyRollover(){
@@ -2106,7 +2069,7 @@ function renderHome(){
         const w=(rev.perPoste.week[p.num]||0).toLocaleString('fr-FR');
         const t=(rev.perPoste.total[p.num]||0).toLocaleString('fr-FR');
         return `<div class="hpr" style="flex-direction:column;align-items:stretch;gap:2px">
-          <div style="font-size:12px;font-weight:600">${esc(p.num)} — ${esc(gzPosteTypeLabel(p))}</div>
+          <div style="font-size:12px;font-weight:600">${esc(GameZoneManagement.displayName(p))} — ${esc(gzPosteTypeLabel(p))}</div>
           <div style="font-size:10px;color:var(--muted)">Jour : ${d} F · Semaine : ${w} F · Total : ${t} F</div>
         </div>`;
       }).join('')
@@ -2123,7 +2086,7 @@ function renderHome(){
     const recPoste=rev.perPoste.day[p.num]||0;
     return `<div class="hpr">
       <div class="prise-dot ${a.actif&&hasPrise?'pd-on':hasPrise?'pd-off':'pd-none'}"></div>
-      <div style="font-family:var(--fd);font-size:16px;font-weight:700;color:var(--gold);min-width:36px">${p.num}</div>
+      <div style="font-family:var(--fd);font-size:16px;font-weight:700;color:var(--gold);min-width:36px">${esc(GameZoneManagement.displayName(p))}</div>
       <div style="flex:1"><div style="font-size:12px;font-weight:500">${esc(gzPosteTypeLabel(p))}</div>
       <div style="font-size:10px;color:var(--muted)">${hasPrise?'🔌 Prise liée':'⚠️ Sans prise'} · ${recPoste.toLocaleString('fr-FR')} FCFA aujourd'hui</div></div>
       ${a.actif?`<div style="text-align:right"><div style="font-family:var(--fd);font-size:16px;color:var(--green)">${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')}</div><div style="font-size:10px;color:var(--muted)">${a.client}</div></div>`
@@ -2141,7 +2104,7 @@ function renderPostes(){
   list.innerHTML=postes.map((p,i)=>`
     <div class="crow">
       <div class="prise-dot ${p.devid?'pd-off':'pd-none'}"></div>
-      <div style="font-family:var(--fd);font-size:17px;font-weight:700;color:var(--gold);min-width:36px">${p.num}</div>
+      <div style="font-family:var(--fd);font-size:17px;font-weight:700;color:var(--gold);min-width:36px">${esc(GameZoneManagement.displayName(p))}</div>
       <div style="flex:1">
         <div style="font-size:13px;font-weight:500">${esc(gzPosteTypeLabel(p))}</div>
         <div style="font-size:10px;color:var(--muted)">${p.devid?(gzSharedPlugPartners(p).length?'🔌 Prise partagée avec '+esc(gzSharedPlugPartners(p).map(x=>x.num).join(', ')):'🔌 Cloud Tuya lié'):'⚠️ Prise non configurée'}</div>
@@ -2173,6 +2136,8 @@ function openModalPoste(idx=-1){
     const p=(DB.get('postes')||[])[idx];
     document.getElementById('mo-poste-title').textContent='Modifier le poste';
     document.getElementById('p-num').value=p.num||'';
+    document.getElementById('p-num').readOnly=true;
+    document.getElementById('p-display-name').value=GameZoneManagement.displayName(p);
     gzRefreshPosteTypeSelect(p.type||'Autres');
     document.getElementById('p-custom-type').value=p.typeCustom||'';
     document.getElementById('p-ip').value=p.ip||'';
@@ -2181,6 +2146,7 @@ function openModalPoste(idx=-1){
     document.getElementById('p-ver').value=p.ver||'3.3';
   } else {
     document.getElementById('mo-poste-title').textContent='Nouveau poste';
+    document.getElementById('p-num').readOnly=false;document.getElementById('p-display-name').value='';
     ['p-num','p-type','p-ip','p-devid','p-key'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('p-ver').value='3.3';
     gzRefreshPosteTypeSelect('PS5');
@@ -2192,29 +2158,20 @@ function openModalPoste(idx=-1){
 }
 function editPoste(i){openModalPoste(i);}
 
-function savePoste(){
-  const num=document.getElementById('p-num').value.trim();
-  const type=document.getElementById('p-type').value.trim();
-  const typeCustom=type==='Autres'?document.getElementById('p-custom-type').value.trim():'';
-  if(!num||!type){showToast('⚠️ Nom et type obligatoires');return;}
-  const postes=DB.get('postes')||[];
-  const idx=parseInt(document.getElementById('p-edit-idx').value);
-  const old=(idx>=0&&postes[idx])?postes[idx]:{};
-  if(postes.some((x,i)=>i!==idx&&String(x.num||'').trim().toLowerCase()===num.toLowerCase()))return showToast('⚠️ Ce nom de poste existe déjà. Choisissez un nom différent.');
-  const active=idx>=0?activeForPoste(old,idx):{};
-  if(active&&active.actif&&(old.num!==num||String(old.devid||'').trim()!==document.getElementById('p-devid').value.trim()))return showToast('⚠️ Terminez cette session avant de modifier son nom ou sa prise.');
-  const obj={
-    ...old,
-    num,type,typeCustom,
-    devid:document.getElementById('p-devid').value.trim(),
-    ip:'',
-    ver:'3.3'
-  };
-  delete obj.key;
-  if(idx>=0){postes[idx]=obj;showToast('✅ Poste modifié');}
-  else{postes.push(obj);showToast('✅ Poste ajouté');}
-  DB.set('postes',postes);
-  closeModal('mo-poste');renderPostes();renderHome();
+async function savePoste(){
+ const idx=Number(document.getElementById('p-edit-idx').value),type=document.getElementById('p-type').value.trim();
+ const values={num:document.getElementById('p-num').value.trim(),displayName:document.getElementById('p-display-name').value.trim(),type,typeCustom:type==='Autres'?document.getElementById('p-custom-type').value.trim():'',devid:document.getElementById('p-devid').value.trim(),ip:'',ver:'3.3'};
+ try{
+  if(!loggedIn||!fbRoot||!firebase.auth().currentUser)throw Error('Connexion Patron requise');
+  if((await firebase.database().ref('.info/connected').once('value')).val()!==true)throw Error('Connexion Firebase absente');
+  const raw=firebase.database().ref(patronAuditRoom()),before=(await raw.once('value')).val()||{};
+  const expected=JSON.stringify((before.postes||[])[idx]||null);let issue='';
+  const tx=await raw.transaction(room=>{try{if(!room||JSON.stringify((room.postes||[])[idx]||null)!==expected)throw Error('Le poste a changé ailleurs : actualise');const list=GameZoneManagement.updatePostes(room,idx,values);return Object.assign({},room,{postes:list});}catch(e){issue=e.message;return undefined;}},undefined,false);
+  if(!tx.committed)throw Error(issue||'Modification refusée');
+  DB._cache=tx.snapshot.val()||DB._cache;
+  await ownerPersistActivity('Paramètres de poste modifiés',values.displayName,'',{poste:values.num,typeActivite:'parametres_poste'});
+  closeModal('mo-poste');renderPostes();renderHome();showToast('✅ Poste enregistré');
+ }catch(e){showToast('⚠️ '+e.message);}
 }
 
 function delPoste(i){
@@ -2419,7 +2376,7 @@ function renderTarifs(){
   list.innerHTML=[...tarifs].sort((a,b)=>a.min-b.min).map(t=>{
     const i=all.indexOf(t);
     return `<div class="trow">
-      <div style="flex:1"><div style="font-size:13px">${t.lbl}</div><div style="font-size:10px;color:var(--muted)">${t.min} min</div></div>
+      <div style="flex:1"><div style="font-size:13px">${esc(t.lbl)}</div><div style="font-size:10px;color:var(--muted)">${t.min} min</div></div>
       <div style="font-size:14px;font-weight:700;color:var(--gold);min-width:100px;text-align:right">${t.prix.toLocaleString()} FCFA</div>
       <button class="btn-edit" onclick="editTarif(${i})">✏️</button>
       <button class="btn-del" onclick="delTarif(${i})">🗑</button>
@@ -2443,22 +2400,27 @@ function openModalTarif(idx=-1){
   openModal('mo-tarif');setTimeout(()=>document.getElementById('t-min').focus(),200);
 }
 function editTarif(i){openModalTarif(i);}
-function saveTarif(){
-  const console_=document.getElementById('t-console').value;
-  const min=parseInt(document.getElementById('t-min').value);
-  const lbl=document.getElementById('t-lbl').value.trim();
-  const prix=parseInt(document.getElementById('t-prix').value);
-  if(!min||!lbl||!prix){showToast('⚠️ Remplissez tous les champs');return;}
-  const tarifs=DB.get('tarifs')||[];
-  const idx=parseInt(document.getElementById('t-edit-idx').value);
-  if(idx>=0){tarifs[idx]={console:console_,min,lbl,prix};showToast('✅ Tarif modifié');}
-  else{tarifs.push({console:console_,min,lbl,prix});showToast('✅ Tarif ajouté');}
-  DB.set('tarifs',tarifs);activeConsoleTab=console_;closeModal('mo-tarif');renderTarifs();
+async function gzSaveTarifChange(index,values){
+ if(!loggedIn||!firebase.auth().currentUser||!fbRoot)throw Error('Connexion Patron requise');
+ if((await firebase.database().ref('.info/connected').once('value')).val()!==true)throw Error('Connexion Firebase absente');
+ const ref=firebase.database().ref(patronAuditRoom()+'/tarifs');
+ const before=(await ref.once('value')).val()||[],expected=JSON.stringify(before[index]||null);let issue='';
+ const tx=await ref.transaction(items=>{try{
+  const list=Array.isArray(items)?items.slice():[];
+  if(JSON.stringify(list[index]||null)!==expected)throw Error('Ce tarif a changé ailleurs : actualise');
+  if(values){if(!values.console||!values.lbl||values.lbl.length>64||!Number.isSafeInteger(values.min)||values.min<=0||!Number.isSafeInteger(values.prix)||values.prix<=0)throw Error('Nom, durée et prix entiers positifs obligatoires');if(index>=0)list[index]=values;else list.push(values);}
+  else{if(index<0||!list[index])throw Error('Tarif introuvable');list.splice(index,1);}
+  return list;
+ }catch(e){issue=e.message;return undefined;}},undefined,false);
+ if(!tx.committed)throw Error(issue||'Modification refusée');
+ DB._cache.tarifs=tx.snapshot.val()||[];
+ await ownerPersistActivity(values?'Tarif enregistré':'Tarif supprimé',values?values.console+' · '+values.lbl+' · '+values.min+' min · '+values.prix+' F':'Suppression du tarif sélectionné','',{typeActivite:'parametres_tarifs'});
 }
-function delTarif(i){
-  if(!confirm('Supprimer ?'))return;
-  const tarifs=DB.get('tarifs')||[];tarifs.splice(i,1);DB.set('tarifs',tarifs);renderTarifs();showToast('Supprimé');
+async function saveTarif(){
+ const values={console:document.getElementById('t-console').value,min:Number(document.getElementById('t-min').value),lbl:document.getElementById('t-lbl').value.trim(),prix:Number(document.getElementById('t-prix').value)};
+ try{await gzSaveTarifChange(Number(document.getElementById('t-edit-idx').value),values);activeConsoleTab=values.console;closeModal('mo-tarif');renderTarifs();showToast('✅ Tarif enregistré');}catch(e){showToast('⚠️ '+e.message);}
 }
+async function delTarif(i){if(!confirm('Supprimer ce tarif ?'))return;try{await gzSaveTarifChange(i,null);renderTarifs();showToast('✅ Tarif supprimé');}catch(e){showToast('⚠️ '+e.message);}}
 
 // GÉRANTS — droits individuels Firebase, sans mot de passe en clair.
 // IMPORTANT : les règles de la base doivent être mises à jour AVANT d'utiliser ces fonctions.
